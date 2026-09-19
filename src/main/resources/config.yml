@@ -1,0 +1,24 @@
+# N7-Link Configuration
+
+# Linking code settings
+link:
+  code-length: 6
+  code-expiry-minutes: 5
+
+# Linking rewards
+rewards:
+  enabled: true
+
+  commands:
+    - "give %player% diamond 5"
+
+  message: "&aYour Discord account has been linked successfully!"
+
+# Discord settings
+discord:
+  enabled: true
+
+# API settings
+api:
+  url: ""
+  secret: ""
