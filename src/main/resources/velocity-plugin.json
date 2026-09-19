@@ -1,0 +1,10 @@
+{
+  "id": "n7link",
+  "name": "N7-Link",
+  "version": "1.0.0",
+  "description": "Minecraft to Discord account linking system",
+  "authors": [
+    "N7"
+  ],
+  "main": "me.n7link.N7Link"
+}
