@@ -1,0 +1,13 @@
+{
+  "name": "n7-link-api",
+  "version": "1.0.0",
+  "description": "N7-Link API",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "pg": "^8.16.3"
+  }
+}
