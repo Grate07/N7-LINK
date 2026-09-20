@@ -68,13 +68,15 @@ public class N7Link {
             );
 
     @Inject
-    public N7Link(
-            ProxyServer server,
-            Logger logger
-    ) {
-        this.server = server;
-        this.logger = logger;
-    }
+public N7Link(
+        ProxyServer server,
+        Logger logger,
+        @DataDirectory Path dataDirectory
+) {
+    this.server = server;
+    this.logger = logger;
+    this.dataDirectory = dataDirectory;
+}
 
     // =====================================================
     // ENABLE
