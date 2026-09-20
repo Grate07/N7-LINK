@@ -178,41 +178,14 @@ public N7Link(
 
     private void loadConfiguration() {
 
-        apiUrl =
-                System.getenv("N7LINK_API_URL");
+    try {
 
-        apiSecret =
-                System.getenv("N7LINK_API_SECRET");
-
-        codeLength = 6;
-
-        codeExpiryMinutes = 5;
-
-        rewardsEnabled = true;
-
-        rewardMessage =
-                "&aThanks for linking your Discord account!";
-
-        if (
-                apiUrl == null ||
-                apiUrl.isBlank()
-        ) {
-
-            logger.warn(
-                    "N7LINK_API_URL is not configured!"
-            );
+        if (!Files.exists(dataDirectory)) {
+            Files.createDirectories(dataDirectory);
         }
 
-        if (
-                apiSecret == null ||
-                apiSecret.isBlank()
-        ) {
-
-            logger.warn(
-                    "N7LINK_API_SECRET is not configured!"
-            );
-        }
-    }
+        Path configFile =
+                dataDirectory.resolve("config.yml"); 
 
     // =====================================================
     // LINK COMMAND
