@@ -1,6 +1,0 @@
-name: N7-Link-Bridge
-version: 1.0.0
-main: me.n7link.bridge.N7LinkBridge
-api-version: '1.21'
-author: N7
-description: Paper bridge for N7-Link rewards
