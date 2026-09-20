@@ -1,6 +1,7 @@
 package me.n7link.bridge;
 
 import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.plugin.messaging.PluginMessageListener;
@@ -11,19 +12,22 @@ import java.io.DataInputStream;
 public class N7LinkBridge extends JavaPlugin
         implements PluginMessageListener {
 
-    private static final String CHANNEL = "n7link:reward";
+    private static final String CHANNEL =
+            "n7link:reward";
 
     @Override
     public void onEnable() {
 
-        getServer().getMessenger()
+        getServer()
+                .getMessenger()
                 .registerIncomingPluginChannel(
                         this,
                         CHANNEL,
                         this
                 );
 
-        getServer().getMessenger()
+        getServer()
+                .getMessenger()
                 .registerOutgoingPluginChannel(
                         this,
                         CHANNEL
@@ -41,14 +45,16 @@ public class N7LinkBridge extends JavaPlugin
     @Override
     public void onDisable() {
 
-        getServer().getMessenger()
+        getServer()
+                .getMessenger()
                 .unregisterIncomingPluginChannel(
                         this,
                         CHANNEL,
                         this
                 );
 
-        getServer().getMessenger()
+        getServer()
+                .getMessenger()
                 .unregisterOutgoingPluginChannel(
                         this,
                         CHANNEL
@@ -62,7 +68,7 @@ public class N7LinkBridge extends JavaPlugin
     @Override
     public void onPluginMessageReceived(
             String channel,
-            Player player,
+            Player sender,
             byte[] message
     ) {
 
@@ -74,13 +80,21 @@ public class N7LinkBridge extends JavaPlugin
 
             DataInputStream input =
                     new DataInputStream(
-                            new ByteArrayInputStream(message)
+                            new ByteArrayInputStream(
+                                    message
+                            )
                     );
 
             String action =
                     input.readUTF();
 
             if (!"N7LINK_REWARD_V1".equals(action)) {
+
+                getLogger().warning(
+                        "Unknown N7-Link packet: "
+                                + action
+                );
+
                 return;
             }
 
@@ -93,84 +107,75 @@ public class N7LinkBridge extends JavaPlugin
             int commandCount =
                     input.readInt();
 
+            if (commandCount < 0 ||
+                    commandCount > 100) {
+
+                getLogger().warning(
+                        "Invalid reward command count: "
+                                + commandCount
+                );
+
+                return;
+            }
+
             String[] commands =
                     new String[commandCount];
 
-            for (int i = 0; i < commandCount; i++) {
-                commands[i] = input.readUTF();
+            for (
+                    int i = 0;
+                    i < commandCount;
+                    i++
+            ) {
+
+                commands[i] =
+                        input.readUTF();
             }
 
             String rewardMessage =
                     input.readUTF();
 
             Player target =
-                    Bukkit.getPlayerExact(username);
+                    Bukkit.getPlayerExact(
+                            username
+                    );
 
             if (target == null) {
+
                 getLogger().warning(
                         "Could not find player "
                                 + username
-                                + " for reward."
+                                + " for N7-Link reward."
                 );
+
+                return;
+            }
+
+            /*
+             * Make sure the packet UUID belongs to
+             * the player receiving the reward.
+             */
+            if (
+                    !target.getUniqueId()
+                            .toString()
+                            .equalsIgnoreCase(uuid)
+            ) {
+
+                getLogger().warning(
+                        "UUID mismatch for reward player "
+                                + username
+                );
+
                 return;
             }
 
             Bukkit.getScheduler().runTask(
                     this,
-                    () -> {
-
-                        for (String command : commands) {
-
-                            if (command == null ||
-                                    command.isBlank()) {
-                                continue;
-                            }
-
-                            String processedCommand =
-                                    command
-                                            .replace(
-                                                    "%player%",
-                                                    target.getName()
-                                            )
-                                            .replace(
-                                                    "%uuid%",
-                                                    uuid
-                                            );
-
-                            Bukkit.dispatchCommand(
-                                    Bukkit.getConsoleSender(),
-                                    processedCommand
-                            );
-                        }
-
-                        if (rewardMessage != null &&
-                                !rewardMessage.isBlank()) {
-
-                            String messageText =
-                                    rewardMessage
-                                            .replace(
-                                                    "%player%",
-                                                    target.getName()
-                                            )
-                                            .replace(
-                                                    "%uuid%",
-                                                    uuid
-                                            )
-                                            .replace(
-                                                    "&",
-                                                    "§"
-                                            );
-
-                            target.sendMessage(
-                                    messageText
-                            );
-                        }
-
-                        getLogger().info(
-                                "Executed N7-Link rewards for "
-                                        + target.getName()
-                        );
-                    }
+                    () -> executeReward(
+                            target,
+                            uuid,
+                            commands,
+                            rewardMessage
+                    )
             );
 
         } catch (Exception error) {
@@ -180,5 +185,84 @@ public class N7LinkBridge extends JavaPlugin
                             + error.getMessage()
             );
         }
+    }
+
+    private void executeReward(
+            Player player,
+            String uuid,
+            String[] commands,
+            String rewardMessage
+    ) {
+
+        if (player == null ||
+                !player.isOnline()) {
+
+            return;
+        }
+
+        for (String command : commands) {
+
+            if (
+                    command == null ||
+                    command.isBlank()
+            ) {
+                continue;
+            }
+
+            String processedCommand =
+                    command
+                            .replace(
+                                    "%player%",
+                                    player.getName()
+                            )
+                            .replace(
+                                    "%uuid%",
+                                    uuid
+                            );
+
+            try {
+
+                Bukkit.dispatchCommand(
+                        Bukkit.getConsoleSender(),
+                        processedCommand
+                );
+
+            } catch (Exception error) {
+
+                getLogger().warning(
+                        "Failed to execute reward command for "
+                                + player.getName()
+                                + ": "
+                                + error.getMessage()
+                );
+            }
+        }
+
+        if (
+                rewardMessage != null &&
+                !rewardMessage.isBlank()
+        ) {
+
+            String message =
+                    ChatColor.translateAlternateColorCodes(
+                            '&',
+                            rewardMessage
+                                    .replace(
+                                            "%player%",
+                                            player.getName()
+                                    )
+                                    .replace(
+                                            "%uuid%",
+                                            uuid
+                                    )
+                    );
+
+            player.sendMessage(message);
+        }
+
+        getLogger().info(
+                "Executed N7-Link rewards for "
+                        + player.getName()
+        );
     }
         }
