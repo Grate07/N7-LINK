@@ -19,6 +19,8 @@ import org.slf4j.Logger;
 import org.spongepowered.configurate.ConfigurationNode;
 import org.spongepowered.configurate.yaml.YamlConfigurationLoader;
 
+import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
@@ -67,16 +69,23 @@ public class N7Link {
                     "reward"
             );
 
+
+    // =====================================================
+    // CONSTRUCTOR
+    // =====================================================
+
     @Inject
-public N7Link(
-        ProxyServer server,
-        Logger logger,
-        @DataDirectory Path dataDirectory
-) {
-    this.server = server;
-    this.logger = logger;
-    this.dataDirectory = dataDirectory;
-}
+    public N7Link(
+            ProxyServer server,
+            Logger logger,
+            @DataDirectory Path dataDirectory
+    ) {
+
+        this.server = server;
+        this.logger = logger;
+        this.dataDirectory = dataDirectory;
+    }
+
 
     // =====================================================
     // ENABLE
@@ -103,15 +112,24 @@ public N7Link(
         );
 
         logger.info("N7-Link has been enabled!");
-        logger.info("N7-Link account linking command registered!");
-        logger.info("N7-Link supports Java and Bedrock players.");
+        logger.info(
+                "N7-Link account linking command registered!"
+        );
+        logger.info(
+                "N7-Link supports Java and Bedrock players."
+        );
 
         if (rewardsEnabled) {
-            logger.info("N7-Link rewards are enabled.");
+            logger.info(
+                    "N7-Link rewards are enabled."
+            );
         } else {
-            logger.info("N7-Link rewards are disabled.");
+            logger.info(
+                    "N7-Link rewards are disabled."
+            );
         }
     }
+
 
     // =====================================================
     // DISABLE
@@ -127,8 +145,11 @@ public N7Link(
 
         rewardChecking.clear();
 
-        logger.info("N7-Link has been disabled.");
+        logger.info(
+                "N7-Link has been disabled."
+        );
     }
+
 
     // =====================================================
     // PLAYER LOGIN
@@ -158,6 +179,7 @@ public N7Link(
                 .schedule();
     }
 
+
     // =====================================================
     // PLAYER DISCONNECT
     // =====================================================
@@ -172,109 +194,154 @@ public N7Link(
         );
     }
 
+
     // =====================================================
     // CONFIGURATION
     // =====================================================
 
     private void loadConfiguration() {
 
-    try {
+        try {
 
-        if (!Files.exists(dataDirectory)) {
-            Files.createDirectories(dataDirectory);
-        }
+            if (!Files.exists(dataDirectory)) {
+                Files.createDirectories(dataDirectory);
+            }
 
-        Path configFile =
-                dataDirectory.resolve("config.yml"); 
+            Path configFile =
+                    dataDirectory.resolve("config.yml");
+
             if (!Files.exists(configFile)) {
 
-    try (InputStream input =
-                 N7Link.class
-                         .getResourceAsStream("/config.yml")) {
+                try (
+                        InputStream input =
+                                N7Link.class
+                                        .getResourceAsStream(
+                                                "/config.yml"
+                                        )
+                ) {
 
-        if (input == null) {
-            logger.error(
-                    "Could not find config.yml inside the plugin JAR!"
+                    if (input == null) {
+
+                        logger.error(
+                                "Could not find config.yml inside the plugin JAR!"
+                        );
+
+                        return;
+                    }
+
+                    Files.copy(
+                            input,
+                            configFile
+                    );
+                }
+            }
+
+            YamlConfigurationLoader loader =
+                    YamlConfigurationLoader.builder()
+                            .path(configFile)
+                            .build();
+
+            ConfigurationNode config =
+                    loader.load();
+
+            apiUrl =
+                    config.node("api", "url")
+                            .getString("");
+
+            apiSecret =
+                    config.node("api", "secret")
+                            .getString("");
+
+            codeLength =
+                    config.node("link", "code-length")
+                            .getInt(6);
+
+            codeExpiryMinutes =
+                    config.node(
+                                    "link",
+                                    "code-expiry-minutes"
+                            )
+                            .getInt(5);
+
+            rewardsEnabled =
+                    config.node(
+                                    "rewards",
+                                    "enabled"
+                            )
+                            .getBoolean(true);
+
+            rewardMessage =
+                    config.node(
+                                    "rewards",
+                                    "message"
+                            )
+                            .getString(
+                                    "&aThanks for linking your Discord account!"
+                            );
+
+            rewardCommands =
+                    config.node(
+                                    "rewards",
+                                    "commands"
+                            )
+                            .getList(
+                                    String.class,
+                                    List.of()
+                            );
+
+            logger.info(
+                    "N7-Link configuration loaded."
             );
-            return;
+
+            logger.info(
+                    "Link code length: {}",
+                    codeLength
+            );
+
+            logger.info(
+                    "Link code expiry: {} minutes",
+                    codeExpiryMinutes
+            );
+
+            logger.info(
+                    "Rewards enabled: {}",
+                    rewardsEnabled
+            );
+
+            logger.info(
+                    "Reward commands loaded: {}",
+                    rewardCommands.size()
+            );
+
+            if (
+                    apiUrl == null ||
+                    apiUrl.isBlank()
+            ) {
+
+                logger.warn(
+                        "api.url is not configured!"
+                );
+            }
+
+            if (
+                    apiSecret == null ||
+                    apiSecret.isBlank()
+            ) {
+
+                logger.warn(
+                        "api.secret is not configured!"
+                );
+            }
+
+        } catch (Exception error) {
+
+            logger.error(
+                    "Could not load N7-Link configuration!",
+                    error
+            );
         }
-
-        Files.copy(input, configFile);
     }
-}
 
-YamlConfigurationLoader loader =
-        YamlConfigurationLoader.builder()
-                .path(configFile)
-                .build();
-
-ConfigurationNode config =
-        loader.load();
-
-apiUrl =
-        config.node("api", "url")
-                .getString("");
-
-apiSecret =
-        config.node("api", "secret")
-                .getString("");
-
-codeLength =
-        config.node("link", "code-length")
-                .getInt(6);
-
-codeExpiryMinutes =
-        config.node("link", "code-expiry-minutes")
-                .getInt(5);
-
-rewardsEnabled =
-        config.node("rewards", "enabled")
-                .getBoolean(true);
-
-rewardMessage =
-        config.node("rewards", "message")
-                .getString(
-                        "&aThanks for linking your Discord account!"
-                );
-
-rewardCommands =
-        config.node("rewards", "commands")
-                .getList(
-                        String.class,
-                        List.of()
-                );
-
-logger.info("N7-Link configuration loaded.");
-logger.info("Link code length: {}", codeLength);
-logger.info(
-        "Link code expiry: {} minutes",
-        codeExpiryMinutes
-);
-logger.info(
-        "Rewards enabled: {}",
-        rewardsEnabled
-);
-logger.info(
-        "Reward commands loaded: {}",
-        rewardCommands.size()
-);
-
-if (apiUrl == null || apiUrl.isBlank()) {
-    logger.warn("api.url is not configured!");
-}
-
-if (apiSecret == null || apiSecret.isBlank()) {
-    logger.warn("api.secret is not configured!");
-}
-
-} catch (Exception error) {
-
-    logger.error(
-            "Could not load N7-Link configuration!",
-            error
-    );
-}
-    }
 
     // =====================================================
     // LINK COMMAND
@@ -333,6 +400,7 @@ if (apiSecret == null || apiSecret.isBlank()) {
         }
     }
 
+
     // =====================================================
     // CREATE LINK CODE
     // =====================================================
@@ -344,6 +412,8 @@ if (apiSecret == null || apiSecret.isBlank()) {
         String code =
                 generateCode();
 
+        HttpURLConnection connection = null;
+
         try {
 
             URI uri =
@@ -352,12 +422,14 @@ if (apiSecret == null || apiSecret.isBlank()) {
                             "/api/link/create"
                     );
 
-            HttpURLConnection connection =
+            connection =
                     (HttpURLConnection)
                             uri.toURL()
                                     .openConnection();
 
-            connection.setRequestMethod("POST");
+            connection.setRequestMethod(
+                    "POST"
+            );
 
             connection.setRequestProperty(
                     "Content-Type",
@@ -369,9 +441,17 @@ if (apiSecret == null || apiSecret.isBlank()) {
                     "Bearer " + apiSecret
             );
 
-            connection.setConnectTimeout(10000);
-            connection.setReadTimeout(10000);
-            connection.setDoOutput(true);
+            connection.setConnectTimeout(
+                    10000
+            );
+
+            connection.setReadTimeout(
+                    10000
+            );
+
+            connection.setDoOutput(
+                    true
+            );
 
             String json = """
                     {
@@ -381,7 +461,9 @@ if (apiSecret == null || apiSecret.isBlank()) {
                     }
                     """.formatted(
                     player.getUniqueId(),
-                    escapeJson(player.getUsername()),
+                    escapeJson(
+                            player.getUsername()
+                    ),
                     code
             );
 
@@ -416,7 +498,9 @@ if (apiSecret == null || apiSecret.isBlank()) {
             } else {
 
                 String response =
-                        readResponse(connection);
+                        readResponse(
+                                connection
+                        );
 
                 logger.warn(
                         "N7-Link API returned HTTP {}: {}",
@@ -442,8 +526,6 @@ if (apiSecret == null || apiSecret.isBlank()) {
                 }
             }
 
-            connection.disconnect();
-
         } catch (Exception error) {
 
             logger.warn(
@@ -456,8 +538,15 @@ if (apiSecret == null || apiSecret.isBlank()) {
                             "§cCould not connect to the N7-Link service."
                     )
             );
+
+        } finally {
+
+            if (connection != null) {
+                connection.disconnect();
+            }
         }
     }
+
 
     // =====================================================
     // LINK MESSAGE
@@ -531,6 +620,7 @@ if (apiSecret == null || apiSecret.isBlank()) {
         );
     }
 
+
     // =====================================================
     // REWARD CHECK
     // =====================================================
@@ -556,6 +646,7 @@ if (apiSecret == null || apiSecret.isBlank()) {
                         true
                 ) != null
         ) {
+
             return;
         }
 
@@ -568,6 +659,7 @@ if (apiSecret == null || apiSecret.isBlank()) {
                     status == null ||
                     !status.linked
             ) {
+
                 return;
             }
 
@@ -584,9 +676,8 @@ if (apiSecret == null || apiSecret.isBlank()) {
 
             rewardChecking.remove(uuid);
         }
-    }
-
-    // =====================================================
+                    }
+            // =====================================================
     // GET MINECRAFT LINK
     // =====================================================
 
@@ -610,15 +701,22 @@ if (apiSecret == null || apiSecret.isBlank()) {
                             uri.toURL()
                                     .openConnection();
 
-            connection.setRequestMethod("GET");
+            connection.setRequestMethod(
+                    "GET"
+            );
 
             connection.setRequestProperty(
                     "Authorization",
                     "Bearer " + apiSecret
             );
 
-            connection.setConnectTimeout(10000);
-            connection.setReadTimeout(10000);
+            connection.setConnectTimeout(
+                    10000
+            );
+
+            connection.setReadTimeout(
+                    10000
+            );
 
             int responseCode =
                     connection.getResponseCode();
@@ -668,9 +766,11 @@ if (apiSecret == null || apiSecret.isBlank()) {
                 connection.disconnect();
             }
         }
-        }
-            // =====================================================
-    // SEND REWARD TO PAPER
+    }
+
+
+    // =====================================================
+    // SEND REWARD
     // =====================================================
 
     private void sendReward(
@@ -678,93 +778,167 @@ if (apiSecret == null || apiSecret.isBlank()) {
             LinkStatus status
     ) {
 
-        if (
-                player.getCurrentServer()
-                        .isEmpty()
-        ) {
+        if (!player.isActive()) {
+            return;
+        }
+
+        if (!rewardsEnabled) {
+            return;
+        }
+
+        Optional<ServerConnection> serverConnection =
+                player.getCurrentServer();
+
+        if (serverConnection.isEmpty()) {
+
+            logger.warn(
+                    "Could not send reward to {} because the player is not connected to a server.",
+                    player.getUsername()
+            );
 
             return;
         }
 
-        ServerConnection serverConnection =
-                player.getCurrentServer()
-                        .get();
-
         try {
 
-            ByteArrayOutputStream bytes =
+            ByteArrayOutputStream byteOutput =
                     new ByteArrayOutputStream();
 
             DataOutputStream output =
-                    new DataOutputStream(bytes);
+                    new DataOutputStream(
+                            byteOutput
+                    );
+
+            /*
+             * Packet format:
+             *
+             * UTF  -> Action
+             * UTF  -> Minecraft UUID
+             * UTF  -> Minecraft username
+             * INT  -> Number of reward commands
+             * UTF  -> Each command
+             * UTF  -> Reward message
+             */
 
             output.writeUTF(
                     "N7LINK_REWARD_V1"
             );
 
             output.writeUTF(
-                    player.getUniqueId()
-                            .toString()
+                    player.getUniqueId().toString()
             );
 
             output.writeUTF(
                     player.getUsername()
             );
 
-            // Number of reward commands
-output.writeInt(rewardCommands.size());
+            List<String> processedCommands =
+                    rewardCommands == null
+                            ? List.of()
+                            : rewardCommands.stream()
+                                    .map(command ->
+                                            command
+                                                    .replace(
+                                                            "%player%",
+                                                            player.getUsername()
+                                                    )
+                                                    .replace(
+                                                            "%uuid%",
+                                                            player.getUniqueId().toString()
+                                                    )
+                                    )
+                                    .toList();
 
-for (String command : rewardCommands) {
+            output.writeInt(
+                    processedCommands.size()
+            );
 
-    String processedCommand =
-            command
-                    .replace(
-                            "%player%",
-                            player.getUsername()
-                    )
-                    .replace(
-                            "%uuid%",
-                            player.getUniqueId().toString()
-                    );
+            for (
+                    String command :
+                    processedCommands
+            ) {
 
-    output.writeUTF(processedCommand);
-}
+                output.writeUTF(
+                        command
+                );
+            }
 
-            // Reward message
+            String processedMessage =
+                    rewardMessage == null
+                            ? ""
+                            : rewardMessage
+                                    .replace(
+                                            "%player%",
+                                            player.getUsername()
+                                    )
+                                    .replace(
+                                            "%uuid%",
+                                            player.getUniqueId().toString()
+                                    );
+
             output.writeUTF(
-                    rewardMessage
+                    processedMessage
             );
 
             output.flush();
 
+            byte[] message =
+                    byteOutput.toByteArray();
+
             boolean sent =
                     serverConnection
+                            .get()
                             .sendPluginMessage(
                                     REWARD_CHANNEL,
-                                    bytes.toByteArray()
+                                    message
                             );
 
             if (!sent) {
 
                 logger.warn(
-                        "Could not send reward to Paper for {}",
+                        "Velocity could not send reward packet to Paper for {}.",
                         player.getUsername()
                 );
 
                 return;
             }
 
-            claimReward(player);
+            logger.info(
+                    "Sent N7-Link reward packet to Paper for {}.",
+                    player.getUsername()
+            );
+
+            /*
+             * The Paper bridge receives the packet and executes
+             * the configured reward commands.
+             *
+             * We only claim the reward after the packet has
+             * successfully been sent by Velocity.
+             */
+
+            server.getScheduler()
+                    .buildTask(
+                            this,
+                            () -> claimReward(
+                                    player
+                            )
+                    )
+                    .delay(
+                            1,
+                            TimeUnit.SECONDS
+                    )
+                    .schedule();
 
         } catch (Exception error) {
 
             logger.warn(
-                    "Could not send reward for {}: {}",
+                    "Could not send N7-Link reward to {}: {}",
                     player.getUsername(),
                     error.getMessage()
             );
         }
     }
+
 
     // =====================================================
     // CLAIM REWARD
@@ -773,6 +947,10 @@ for (String command : rewardCommands) {
     private void claimReward(
             Player player
     ) {
+
+        if (!player.isActive()) {
+            return;
+        }
 
         HttpURLConnection connection = null;
 
@@ -791,11 +969,8 @@ for (String command : rewardCommands) {
                             uri.toURL()
                                     .openConnection();
 
-            connection.setRequestMethod("POST");
-
-            connection.setRequestProperty(
-                    "Content-Type",
-                    "application/json"
+            connection.setRequestMethod(
+                    "POST"
             );
 
             connection.setRequestProperty(
@@ -803,41 +978,69 @@ for (String command : rewardCommands) {
                     "Bearer " + apiSecret
             );
 
-            connection.setConnectTimeout(10000);
-            connection.setReadTimeout(10000);
-            connection.setDoOutput(true);
+            connection.setRequestProperty(
+                    "Content-Type",
+                    "application/json"
+            );
 
-            connection.getOutputStream().close();
+            connection.setConnectTimeout(
+                    10000
+            );
+
+            connection.setReadTimeout(
+                    10000
+            );
+
+            connection.setDoOutput(
+                    true
+            );
+
+            try (
+                    OutputStream output =
+                            connection.getOutputStream()
+            ) {
+
+                output.write(
+                        "{}".getBytes(
+                                StandardCharsets.UTF_8
+                        )
+                );
+            }
 
             int responseCode =
                     connection.getResponseCode();
 
+            String response =
+                    readResponse(connection);
+
             if (responseCode == 200) {
 
                 logger.info(
-                        "Reward claimed for {}",
+                        "Successfully claimed N7-Link reward for {}.",
                         player.getUsername()
                 );
 
             } else if (responseCode == 409) {
 
                 logger.info(
-                        "Reward was already claimed for {}",
+                        "N7-Link reward was already claimed for {}.",
                         player.getUsername()
                 );
 
             } else {
 
                 logger.warn(
-                        "Reward claim returned HTTP {}",
-                        responseCode
+                        "Reward claim API returned HTTP {} for {}: {}",
+                        responseCode,
+                        player.getUsername(),
+                        response
                 );
             }
 
         } catch (Exception error) {
 
             logger.warn(
-                    "Could not claim reward for {}: {}",
+                    "Could not claim N7-Link reward for {}: {}",
                     player.getUsername(),
                     error.getMessage()
             );
@@ -848,25 +1051,20 @@ for (String command : rewardCommands) {
                 connection.disconnect();
             }
         }
-    }
-
-    // =====================================================
-    // CODE GENERATOR
+                    }
+            // =====================================================
+    // GENERATE LINK CODE
     // =====================================================
 
     private String generateCode() {
 
-        String characters =
+        final String characters =
                 "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
         StringBuilder code =
-                new StringBuilder();
+                new StringBuilder(codeLength);
 
-        for (
-                int i = 0;
-                i < codeLength;
-                i++
-        ) {
+        for (int i = 0; i < codeLength; i++) {
 
             code.append(
                     characters.charAt(
@@ -880,8 +1078,55 @@ for (String command : rewardCommands) {
         return code.toString();
     }
 
+
     // =====================================================
-    // JSON VALUE READER
+    // READ HTTP RESPONSE
+    // =====================================================
+
+    private String readResponse(
+            HttpURLConnection connection
+    ) throws Exception {
+
+        InputStream input;
+
+        if (
+                connection.getResponseCode() >= 400
+        ) {
+
+            input =
+                    connection.getErrorStream();
+
+        } else {
+
+            input =
+                    connection.getInputStream();
+        }
+
+        if (input == null) {
+            return "";
+        }
+
+        try (
+                Scanner scanner =
+                        new Scanner(
+                                input,
+                                StandardCharsets.UTF_8
+                        )
+        ) {
+
+            scanner.useDelimiter(
+                    "\\A"
+            );
+
+            return scanner.hasNext()
+                    ? scanner.next()
+                    : "";
+        }
+    }
+
+
+    // =====================================================
+    // EXTRACT JSON VALUE
     // =====================================================
 
     private String extractJsonValue(
@@ -889,119 +1134,138 @@ for (String command : rewardCommands) {
             String key
     ) {
 
-        String search =
-                "\"" + key + "\":";
-
-        int start =
-                json.indexOf(search);
-
-        if (start == -1) {
+        if (json == null || json.isBlank()) {
             return null;
         }
 
-        start += search.length();
+        String search =
+                "\"" + key + "\"";
+
+        int keyIndex =
+                json.indexOf(search);
+
+        if (keyIndex == -1) {
+            return null;
+        }
+
+        int colonIndex =
+                json.indexOf(
+                        ":",
+                        keyIndex + search.length()
+                );
+
+        if (colonIndex == -1) {
+            return null;
+        }
+
+        int start =
+                colonIndex + 1;
 
         while (
-                start < json.length() &&
-                Character.isWhitespace(
-                        json.charAt(start)
-                )
+                start < json.length()
+                        && Character.isWhitespace(
+                                json.charAt(start)
+                        )
         ) {
-
             start++;
         }
 
         if (
-                start >= json.length() ||
-                json.charAt(start) != '"'
+                start >= json.length()
+                        || json.charAt(start) != '"'
         ) {
-
             return null;
         }
 
         start++;
 
-        int end =
-                json.indexOf(
-                        '"',
-                        start
+        StringBuilder value =
+                new StringBuilder();
+
+        boolean escaped = false;
+
+        for (
+                int i = start;
+                i < json.length();
+                i++
+        ) {
+
+            char character =
+                    json.charAt(i);
+
+            if (escaped) {
+
+                value.append(
+                        character
                 );
 
-        if (end == -1) {
-            return null;
-        }
+                escaped = false;
 
-        return json.substring(
-                start,
-                end
-        );
-    }
-
-    // =====================================================
-    // RESPONSE READER
-    // =====================================================
-
-    private String readResponse(
-            HttpURLConnection connection
-    ) {
-
-        try {
-
-            InputStream stream;
-
-            if (
-                    connection.getErrorStream()
-                            != null
-            ) {
-
-                stream =
-                        connection.getErrorStream();
-
-            } else {
-
-                stream =
-                        connection.getInputStream();
+                continue;
             }
 
-            try (
-                    Scanner scanner =
-                            new Scanner(
-                                    stream,
-                                    StandardCharsets.UTF_8
-                            )
-            ) {
+            if (character == '\\') {
 
-                return scanner
-                        .useDelimiter("\\A")
-                        .hasNext()
-                        ? scanner.next()
-                        : "";
+                escaped = true;
+
+                continue;
             }
 
-        } catch (Exception ignored) {
+            if (character == '"') {
 
-            return "";
+                return value.toString();
+            }
+
+            value.append(
+                    character
+            );
         }
+
+        return null;
     }
 
+
     // =====================================================
-    // JSON ESCAPE
+    // ESCAPE JSON
     // =====================================================
 
     private String escapeJson(
-            String text
+            String value
     ) {
 
-        return text
-                .replace("\\", "\\\\")
-                .replace("\"", "\\\"");
+        if (value == null) {
+            return "";
+        }
+
+        return value
+                .replace(
+                        "\\",
+                        "\\\\"
+                )
+                .replace(
+                        "\"",
+                        "\\\""
+                )
+                .replace(
+                        "\n",
+                        "\\n"
+                )
+                .replace(
+                        "\r",
+                        "\\r"
+                )
+                .replace(
+                        "\t",
+                        "\\t"
+                );
     }
+
 
     // =====================================================
     // LINK STATUS
     // =====================================================
 
-    private static class LinkStatus {
+    private static final class LinkStatus {
 
         private final boolean linked;
         private final boolean rewardClaimed;
@@ -1023,4 +1287,4 @@ for (String command : rewardCommands) {
                     minecraftUsername;
         }
     }
-        }
+}
