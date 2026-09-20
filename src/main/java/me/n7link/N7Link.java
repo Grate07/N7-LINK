@@ -186,6 +186,95 @@ public N7Link(
 
         Path configFile =
                 dataDirectory.resolve("config.yml"); 
+            if (!Files.exists(configFile)) {
+
+    try (InputStream input =
+                 N7Link.class
+                         .getResourceAsStream("/config.yml")) {
+
+        if (input == null) {
+            logger.error(
+                    "Could not find config.yml inside the plugin JAR!"
+            );
+            return;
+        }
+
+        Files.copy(input, configFile);
+    }
+}
+
+YamlConfigurationLoader loader =
+        YamlConfigurationLoader.builder()
+                .path(configFile)
+                .build();
+
+ConfigurationNode config =
+        loader.load();
+
+apiUrl =
+        config.node("api", "url")
+                .getString("");
+
+apiSecret =
+        config.node("api", "secret")
+                .getString("");
+
+codeLength =
+        config.node("link", "code-length")
+                .getInt(6);
+
+codeExpiryMinutes =
+        config.node("link", "code-expiry-minutes")
+                .getInt(5);
+
+rewardsEnabled =
+        config.node("rewards", "enabled")
+                .getBoolean(true);
+
+rewardMessage =
+        config.node("rewards", "message")
+                .getString(
+                        "&aThanks for linking your Discord account!"
+                );
+
+rewardCommands =
+        config.node("rewards", "commands")
+                .getList(
+                        String.class,
+                        List.of()
+                );
+
+logger.info("N7-Link configuration loaded.");
+logger.info("Link code length: {}", codeLength);
+logger.info(
+        "Link code expiry: {} minutes",
+        codeExpiryMinutes
+);
+logger.info(
+        "Rewards enabled: {}",
+        rewardsEnabled
+);
+logger.info(
+        "Reward commands loaded: {}",
+        rewardCommands.size()
+);
+
+if (apiUrl == null || apiUrl.isBlank()) {
+    logger.warn("api.url is not configured!");
+}
+
+if (apiSecret == null || apiSecret.isBlank()) {
+    logger.warn("api.secret is not configured!");
+}
+
+} catch (Exception error) {
+
+    logger.error(
+            "Could not load N7-Link configuration!",
+            error
+    );
+}
+    }
 
     // =====================================================
     // LINK COMMAND
