@@ -9,10 +9,16 @@ link:
 rewards:
   enabled: true
 
+  # Commands executed when a player successfully links Discord.
+  # %player% = Minecraft username
+  # %uuid% = Minecraft UUID
   commands:
     - "give %player% diamond 5"
+    # - "eco give %player% 10000"
+    # - "lp user %player% parent add linked"
 
-  message: "&aYour Discord account has been linked successfully!"
+  # Message sent to the player after linking
+  message: "&aThanks for linking your Discord account!"
 
 # Discord settings
 discord:
