@@ -7,30 +7,33 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.plugin.messaging.PluginMessageListener;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
+import java.io.DataOutputStream;
 
 public class N7LinkBridge extends JavaPlugin
         implements PluginMessageListener {
 
-    private static final String CHANNEL =
+    private static final String REWARD_CHANNEL =
             "n7link:reward";
+
+    private static final String ACK_CHANNEL =
+            "n7link:reward_ack";
 
     @Override
     public void onEnable() {
 
-        getServer()
-                .getMessenger()
+        getServer().getMessenger()
                 .registerIncomingPluginChannel(
                         this,
-                        CHANNEL,
+                        REWARD_CHANNEL,
                         this
                 );
 
-        getServer()
-                .getMessenger()
+        getServer().getMessenger()
                 .registerOutgoingPluginChannel(
                         this,
-                        CHANNEL
+                        ACK_CHANNEL
                 );
 
         getLogger().info(
@@ -40,24 +43,26 @@ public class N7LinkBridge extends JavaPlugin
         getLogger().info(
                 "Reward channel registered."
         );
+
+        getLogger().info(
+                "Reward ACK channel registered."
+        );
     }
 
     @Override
     public void onDisable() {
 
-        getServer()
-                .getMessenger()
+        getServer().getMessenger()
                 .unregisterIncomingPluginChannel(
                         this,
-                        CHANNEL,
+                        REWARD_CHANNEL,
                         this
                 );
 
-        getServer()
-                .getMessenger()
+        getServer().getMessenger()
                 .unregisterOutgoingPluginChannel(
                         this,
-                        CHANNEL
+                        ACK_CHANNEL
                 );
 
         getLogger().info(
@@ -72,7 +77,7 @@ public class N7LinkBridge extends JavaPlugin
             byte[] message
     ) {
 
-        if (!CHANNEL.equals(channel)) {
+        if (!REWARD_CHANNEL.equals(channel)) {
             return;
         }
 
@@ -80,9 +85,7 @@ public class N7LinkBridge extends JavaPlugin
 
             DataInputStream input =
                     new DataInputStream(
-                            new ByteArrayInputStream(
-                                    message
-                            )
+                            new ByteArrayInputStream(message)
                     );
 
             String action =
@@ -91,8 +94,7 @@ public class N7LinkBridge extends JavaPlugin
             if (!"N7LINK_REWARD_V1".equals(action)) {
 
                 getLogger().warning(
-                        "Unknown N7-Link packet: "
-                                + action
+                        "Unknown N7-Link packet: " + action
                 );
 
                 return;
@@ -107,8 +109,10 @@ public class N7LinkBridge extends JavaPlugin
             int commandCount =
                     input.readInt();
 
-            if (commandCount < 0 ||
-                    commandCount > 100) {
+            if (
+                    commandCount < 0 ||
+                    commandCount > 100
+            ) {
 
                 getLogger().warning(
                         "Invalid reward command count: "
@@ -135,9 +139,7 @@ public class N7LinkBridge extends JavaPlugin
                     input.readUTF();
 
             Player target =
-                    Bukkit.getPlayerExact(
-                            username
-                    );
+                    Bukkit.getPlayerExact(username);
 
             if (target == null) {
 
@@ -150,10 +152,6 @@ public class N7LinkBridge extends JavaPlugin
                 return;
             }
 
-            /*
-             * Make sure the packet UUID belongs to
-             * the player receiving the reward.
-             */
             if (
                     !target.getUniqueId()
                             .toString()
@@ -194,11 +192,14 @@ public class N7LinkBridge extends JavaPlugin
             String rewardMessage
     ) {
 
-        if (player == null ||
-                !player.isOnline()) {
-
+        if (
+                player == null ||
+                !player.isOnline()
+        ) {
             return;
         }
+
+        boolean executionStarted = true;
 
         for (String command : commands) {
 
@@ -228,6 +229,8 @@ public class N7LinkBridge extends JavaPlugin
                 );
 
             } catch (Exception error) {
+
+                executionStarted = false;
 
                 getLogger().warning(
                         "Failed to execute reward command for "
@@ -260,9 +263,70 @@ public class N7LinkBridge extends JavaPlugin
             player.sendMessage(message);
         }
 
-        getLogger().info(
-                "Executed N7-Link rewards for "
-                        + player.getName()
-        );
-    }
+        if (executionStarted) {
+
+            getLogger().info(
+                    "Executed N7-Link rewards for "
+                            + player.getName()
+            );
+
+            sendRewardAck(
+                    player,
+                    uuid
+            );
+
+        } else {
+
+            getLogger().warning(
+                    "N7-Link reward execution had errors for "
+                            + player.getName()
+                            + ". ACK will not be sent."
+            );
         }
+    }
+
+    private void sendRewardAck(
+            Player player,
+            String uuid
+    ) {
+
+        try {
+
+            ByteArrayOutputStream byteOutput =
+                    new ByteArrayOutputStream();
+
+            DataOutputStream output =
+                    new DataOutputStream(
+                            byteOutput
+                    );
+
+            output.writeUTF(
+                    "N7LINK_REWARD_ACK_V1"
+            );
+
+            output.writeUTF(uuid);
+
+            output.flush();
+
+            player.sendPluginMessage(
+                    this,
+                    ACK_CHANNEL,
+                    byteOutput.toByteArray()
+            );
+
+            getLogger().info(
+                    "Sent reward ACK for "
+                            + player.getName()
+            );
+
+        } catch (Exception error) {
+
+            getLogger().warning(
+                    "Could not send reward ACK for "
+                            + player.getName()
+                            + ": "
+                            + error.getMessage()
+            );
+        }
+    }
+}
