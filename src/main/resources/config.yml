@@ -26,5 +26,5 @@ discord:
 
 # API settings
 api:
-  url: ""
-  secret: ""
+  url: "https://ink.onrender.com"
+  secret: "n7link0007563837"
