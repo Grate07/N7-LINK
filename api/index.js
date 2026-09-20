@@ -19,11 +19,6 @@ const pool = new Pool({
 const CODE_EXPIRY_MINUTES =
     Number(process.env.N7LINK_CODE_EXPIRY_MINUTES) || 5;
 
-
-// =====================================================
-// AUTHENTICATION
-// =====================================================
-
 function isAuthorized(req) {
     return (
         API_SECRET &&
@@ -32,9 +27,8 @@ function isAuthorized(req) {
     );
 }
 
-
 // =====================================================
-// HEALTH CHECK
+// HEALTH
 // =====================================================
 
 app.get("/", (req, res) => {
@@ -43,7 +37,6 @@ app.get("/", (req, res) => {
         status: "online"
     });
 });
-
 
 // =====================================================
 // CREATE LINK CODE
@@ -78,7 +71,9 @@ app.post("/api/link/create", async (req, res) => {
         }
 
         const cleanCode =
-            String(code).trim().toUpperCase();
+            String(code)
+                .trim()
+                .toUpperCase();
 
         if (!/^[A-Z0-9]{6}$/.test(cleanCode)) {
             return res.status(400).json({
@@ -87,8 +82,27 @@ app.post("/api/link/create", async (req, res) => {
             });
         }
 
+        // Check if Minecraft account is already linked
+        const existingLink =
+            await pool.query(
+                `
+                SELECT id
+                FROM links
+                WHERE minecraft_uuid = $1
+                LIMIT 1
+                `,
+                [minecraftUuid]
+            );
+
+        if (existingLink.rows.length > 0) {
+
+            return res.status(409).json({
+                success: false,
+                error: "Minecraft account is already linked"
+            });
+        }
+
         // Remove previous unused codes
-        // for this Minecraft account.
         await pool.query(
             `
             DELETE FROM link_codes
@@ -98,6 +112,7 @@ app.post("/api/link/create", async (req, res) => {
             [minecraftUuid]
         );
 
+        // Create new code
         await pool.query(
             `
             INSERT INTO link_codes
@@ -126,7 +141,8 @@ app.post("/api/link/create", async (req, res) => {
         return res.json({
             success: true,
             message: "Link code created",
-            expiresInMinutes: CODE_EXPIRY_MINUTES
+            expiresInMinutes:
+                CODE_EXPIRY_MINUTES
         });
 
     } catch (error) {
@@ -136,6 +152,15 @@ app.post("/api/link/create", async (req, res) => {
             error
         );
 
+        // Unique code collision
+        if (error.code === "23505") {
+
+            return res.status(409).json({
+                success: false,
+                error: "Link code collision"
+            });
+        }
+
         return res.status(500).json({
             success: false,
             error: "Internal server error"
@@ -143,9 +168,8 @@ app.post("/api/link/create", async (req, res) => {
     }
 });
 
-
 // =====================================================
-// VERIFY LINK CODE
+// VERIFY LINK
 // =====================================================
 
 app.post("/api/link/verify", async (req, res) => {
@@ -157,7 +181,8 @@ app.post("/api/link/verify", async (req, res) => {
         });
     }
 
-    const client = await pool.connect();
+    const client =
+        await pool.connect();
 
     try {
 
@@ -167,6 +192,7 @@ app.post("/api/link/verify", async (req, res) => {
         } = req.body;
 
         if (!discordId || !code) {
+
             return res.status(400).json({
                 success: false,
                 error: "Missing required fields"
@@ -174,9 +200,12 @@ app.post("/api/link/verify", async (req, res) => {
         }
 
         const cleanCode =
-            String(code).trim().toUpperCase();
+            String(code)
+                .trim()
+                .toUpperCase();
 
         if (!/^[A-Z0-9]{6}$/.test(cleanCode)) {
+
             return res.status(400).json({
                 success: false,
                 error: "Invalid linking code"
@@ -185,19 +214,19 @@ app.post("/api/link/verify", async (req, res) => {
 
         await client.query("BEGIN");
 
-        // Lock this code while it is being verified.
-        const codeResult = await client.query(
-            `
-            SELECT *
-            FROM link_codes
-            WHERE code = $1
-              AND used = FALSE
-              AND expires_at > NOW()
-            LIMIT 1
-            FOR UPDATE
-            `,
-            [cleanCode]
-        );
+        const codeResult =
+            await client.query(
+                `
+                SELECT *
+                FROM link_codes
+                WHERE code = $1
+                  AND used = FALSE
+                  AND expires_at > NOW()
+                LIMIT 1
+                FOR UPDATE
+                `,
+                [cleanCode]
+            );
 
         if (codeResult.rows.length === 0) {
 
@@ -209,9 +238,10 @@ app.post("/api/link/verify", async (req, res) => {
             });
         }
 
-        const linkCode = codeResult.rows[0];
+        const linkCode =
+            codeResult.rows[0];
 
-        // Check Discord account.
+        // Check Discord account
         const existingDiscord =
             await client.query(
                 `
@@ -233,7 +263,7 @@ app.post("/api/link/verify", async (req, res) => {
             });
         }
 
-        // Check Minecraft account.
+        // Check Minecraft account
         const existingMinecraft =
             await client.query(
                 `
@@ -255,26 +285,29 @@ app.post("/api/link/verify", async (req, res) => {
             });
         }
 
-        // Create the permanent link.
-        await client.query(
-            `
-            INSERT INTO links
-            (
-                discord_id,
-                minecraft_uuid,
-                minecraft_username
-            )
-            VALUES
-            ($1, $2, $3)
-            `,
-            [
-                discordId,
-                linkCode.minecraft_uuid,
-                linkCode.minecraft_username
-            ]
-        );
+        // Create link
+        const inserted =
+            await client.query(
+                `
+                INSERT INTO links
+                (
+                    discord_id,
+                    minecraft_uuid,
+                    minecraft_username
+                )
+                VALUES
+                ($1, $2, $3)
+                RETURNING
+                    linked_at
+                `,
+                [
+                    discordId,
+                    linkCode.minecraft_uuid,
+                    linkCode.minecraft_username
+                ]
+            );
 
-        // Mark code as used.
+        // Mark code as used
         await client.query(
             `
             UPDATE link_codes
@@ -290,11 +323,11 @@ app.post("/api/link/verify", async (req, res) => {
             success: true,
             minecraftUsername:
                 linkCode.minecraft_username,
-
             minecraftUuid:
                 linkCode.minecraft_uuid,
-
-            linkedAt: new Date().toISOString()
+            linkedAt:
+                inserted.rows[0].linked_at,
+            rewardClaimed: false
         });
 
     } catch (error) {
@@ -314,141 +347,336 @@ app.post("/api/link/verify", async (req, res) => {
         });
 
     } finally {
+
         client.release();
     }
 });
 
-
 // =====================================================
-// GET LINKED ACCOUNT
+// GET LINK BY DISCORD ID
 // =====================================================
 
-app.get("/api/link/:discordId", async (req, res) => {
+app.get(
+    "/api/link/:discordId",
+    async (req, res) => {
 
-    if (!isAuthorized(req)) {
-        return res.status(401).json({
-            success: false,
-            error: "Unauthorized"
-        });
-    }
+        if (!isAuthorized(req)) {
+            return res.status(401).json({
+                success: false,
+                error: "Unauthorized"
+            });
+        }
 
-    try {
+        try {
 
-        const {
-            discordId
-        } = req.params;
+            const {
+                discordId
+            } = req.params;
 
-        const result = await pool.query(
-            `
-            SELECT
-                discord_id,
-                minecraft_uuid,
-                minecraft_username,
-                linked_at
-            FROM links
-            WHERE discord_id = $1
-            LIMIT 1
-            `,
-            [discordId]
-        );
+            const result =
+                await pool.query(
+                    `
+                    SELECT
+                        discord_id,
+                        minecraft_uuid,
+                        minecraft_username,
+                        linked_at,
+                        reward_claimed_at
+                    FROM links
+                    WHERE discord_id = $1
+                    LIMIT 1
+                    `,
+                    [discordId]
+                );
 
-        if (result.rows.length === 0) {
+            if (result.rows.length === 0) {
+
+                return res.json({
+                    success: true,
+                    linked: false
+                });
+            }
+
+            const link =
+                result.rows[0];
 
             return res.json({
                 success: true,
-                linked: false
+                linked: true,
+                discordId:
+                    link.discord_id,
+                minecraftUsername:
+                    link.minecraft_username,
+                minecraftUuid:
+                    link.minecraft_uuid,
+                linkedAt:
+                    link.linked_at,
+                rewardClaimed:
+                    link.reward_claimed_at !== null
             });
-        }
 
-        const link = result.rows[0];
+        } catch (error) {
 
-        return res.json({
-            success: true,
-            linked: true,
+            console.error(
+                "Get link error:",
+                error
+            );
 
-            discordId:
-                link.discord_id,
-
-            minecraftUsername:
-                link.minecraft_username,
-
-            minecraftUuid:
-                link.minecraft_uuid,
-
-            linkedAt:
-                link.linked_at
-        });
-
-    } catch (error) {
-
-        console.error(
-            "Get link error:",
-            error
-        );
-
-        return res.status(500).json({
-            success: false,
-            error: "Internal server error"
-        });
-    }
-});
-
-
-// =====================================================
-// UNLINK ACCOUNT
-// =====================================================
-
-app.delete("/api/link/:discordId", async (req, res) => {
-
-    if (!isAuthorized(req)) {
-        return res.status(401).json({
-            success: false,
-            error: "Unauthorized"
-        });
-    }
-
-    try {
-
-        const {
-            discordId
-        } = req.params;
-
-        const result = await pool.query(
-            `
-            DELETE FROM links
-            WHERE discord_id = $1
-            RETURNING *
-            `,
-            [discordId]
-        );
-
-        if (result.rows.length === 0) {
-
-            return res.status(404).json({
+            return res.status(500).json({
                 success: false,
-                error: "Account is not linked"
+                error: "Internal server error"
+            });
+        }
+    }
+);
+
+// =====================================================
+// GET LINK BY MINECRAFT UUID
+// =====================================================
+
+app.get(
+    "/api/link/minecraft/:minecraftUuid",
+    async (req, res) => {
+
+        if (!isAuthorized(req)) {
+            return res.status(401).json({
+                success: false,
+                error: "Unauthorized"
             });
         }
 
-        return res.json({
-            success: true,
-            message: "Account unlinked"
-        });
+        try {
 
-    } catch (error) {
+            const {
+                minecraftUuid
+            } = req.params;
 
-        console.error(
-            "Unlink error:",
-            error
-        );
+            const result =
+                await pool.query(
+                    `
+                    SELECT
+                        minecraft_uuid,
+                        minecraft_username,
+                        linked_at,
+                        reward_claimed_at
+                    FROM links
+                    WHERE minecraft_uuid = $1
+                    LIMIT 1
+                    `,
+                    [minecraftUuid]
+                );
 
-        return res.status(500).json({
-            success: false,
-            error: "Internal server error"
-        });
+            if (result.rows.length === 0) {
+
+                return res.json({
+                    success: true,
+                    linked: false
+                });
+            }
+
+            const link =
+                result.rows[0];
+
+            return res.json({
+                success: true,
+                linked: true,
+                minecraftUuid:
+                    link.minecraft_uuid,
+                minecraftUsername:
+                    link.minecraft_username,
+                linkedAt:
+                    link.linked_at,
+                rewardClaimed:
+                    link.reward_claimed_at !== null
+            });
+
+        } catch (error) {
+
+            console.error(
+                "Get Minecraft link error:",
+                error
+            );
+
+            return res.status(500).json({
+                success: false,
+                error: "Internal server error"
+            });
+        }
     }
-});
+);
 
+// =====================================================
+// CLAIM REWARD
+// =====================================================
+
+app.post(
+    "/api/link/minecraft/:minecraftUuid/reward-claim",
+    async (req, res) => {
+
+        if (!isAuthorized(req)) {
+            return res.status(401).json({
+                success: false,
+                error: "Unauthorized"
+            });
+        }
+
+        const client =
+            await pool.connect();
+
+        try {
+
+            const {
+                minecraftUuid
+            } = req.params;
+
+            await client.query("BEGIN");
+
+            const result =
+                await client.query(
+                    `
+                    SELECT
+                        id,
+                        minecraft_uuid,
+                        minecraft_username,
+                        reward_claimed_at
+                    FROM links
+                    WHERE minecraft_uuid = $1
+                    LIMIT 1
+                    FOR UPDATE
+                    `,
+                    [minecraftUuid]
+                );
+
+            if (result.rows.length === 0) {
+
+                await client.query("ROLLBACK");
+
+                return res.status(404).json({
+                    success: false,
+                    error: "Minecraft account is not linked"
+                });
+            }
+
+            const link =
+                result.rows[0];
+
+            if (
+                link.reward_claimed_at !== null
+            ) {
+
+                await client.query("ROLLBACK");
+
+                return res.status(409).json({
+                    success: false,
+                    error: "Reward has already been claimed"
+                });
+            }
+
+            const updated =
+                await client.query(
+                    `
+                    UPDATE links
+                    SET reward_claimed_at = NOW()
+                    WHERE id = $1
+                    RETURNING reward_claimed_at
+                    `,
+                    [link.id]
+                );
+
+            await client.query("COMMIT");
+
+            return res.json({
+                success: true,
+                minecraftUuid:
+                    link.minecraft_uuid,
+                minecraftUsername:
+                    link.minecraft_username,
+                rewardClaimed: true,
+                rewardClaimedAt:
+                    updated.rows[0].reward_claimed_at
+            });
+
+        } catch (error) {
+
+            try {
+                await client.query("ROLLBACK");
+            } catch {}
+
+            console.error(
+                "Reward claim error:",
+                error
+            );
+
+            return res.status(500).json({
+                success: false,
+                error: "Internal server error"
+            });
+
+        } finally {
+
+            client.release();
+        }
+    }
+);
+
+// =====================================================
+// UNLINK
+// =====================================================
+
+app.delete(
+    "/api/link/:discordId",
+    async (req, res) => {
+
+        if (!isAuthorized(req)) {
+            return res.status(401).json({
+                success: false,
+                error: "Unauthorized"
+            });
+        }
+
+        try {
+
+            const {
+                discordId
+            } = req.params;
+
+            const result =
+                await pool.query(
+                    `
+                    DELETE FROM links
+                    WHERE discord_id = $1
+                    RETURNING *
+                    `,
+                    [discordId]
+                );
+
+            if (result.rows.length === 0) {
+
+                return res.status(404).json({
+                    success: false,
+                    error: "Account is not linked"
+                });
+            }
+
+            return res.json({
+                success: true,
+                message: "Account unlinked"
+            });
+
+        } catch (error) {
+
+            console.error(
+                "Unlink error:",
+                error
+            );
+
+            return res.status(500).json({
+                success: false,
+                error: "Internal server error"
+            });
+        }
+    }
+);
 
 // =====================================================
 // START SERVER
