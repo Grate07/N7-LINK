@@ -94,7 +94,8 @@ if (!LINKED_ROLE_ID) {
 
 const client = new Client({
     intents: [
-        GatewayIntentBits.Guilds
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMembers
     ]
 });
 
@@ -157,7 +158,13 @@ const commands = [
     new SlashCommandBuilder()
         .setName("linkinfo")
         .setDescription(
-            "View your linked Minecraft account"
+            "View your linked Minecraft account information"
+        ),
+
+    new SlashCommandBuilder()
+        .setName("unlink")
+        .setDescription(
+            "Unlink your Minecraft account"
         ),
 
     new SlashCommandBuilder()
@@ -263,9 +270,11 @@ function createProfileEmbed(
     linkedAt
 ) {
 
-    const timestamp = Math.floor(
-        new Date(linkedAt).getTime() / 1000
-    );
+    const timestamp = linkedAt
+        ? Math.floor(
+            new Date(linkedAt).getTime() / 1000
+        )
+        : null;
 
     return new EmbedBuilder()
 
@@ -286,7 +295,9 @@ function createProfileEmbed(
             },
             {
                 name: "Linked",
-                value: `<t:${timestamp}:R>`,
+                value: timestamp
+                    ? `<t:${timestamp}:R>`
+                    : "Unknown",
                 inline: true
             }
         )
@@ -364,6 +375,7 @@ client.on(
 
             if (interaction.isChatInputCommand()) {
 
+                // /link
                 if (
                     interaction.commandName === "link"
                 ) {
@@ -381,9 +393,9 @@ client.on(
                 }
 
 
+                // /profile
                 if (
-                    interaction.commandName === "profile" ||
-                    interaction.commandName === "linkinfo"
+                    interaction.commandName === "profile"
                 ) {
 
                     await showProfile(interaction);
@@ -392,6 +404,29 @@ client.on(
                 }
 
 
+                // /linkinfo
+                if (
+                    interaction.commandName === "linkinfo"
+                ) {
+
+                    await showLinkInfo(interaction);
+
+                    return;
+                }
+
+
+                // /unlink
+                if (
+                    interaction.commandName === "unlink"
+                ) {
+
+                    await unlinkAccount(interaction);
+
+                    return;
+                }
+
+
+                // /setup-link
                 if (
                     interaction.commandName === "setup-link"
                 ) {
@@ -519,8 +554,10 @@ async function verifyLink(interaction) {
             method: "POST",
 
             body: JSON.stringify({
-                discordId: interaction.user.id,
-                code: code
+                discordId:
+                    interaction.user.id,
+
+                code
             })
         }
     );
@@ -541,13 +578,18 @@ async function verifyLink(interaction) {
 
         await interaction.editReply({
             content:
-                `❌ ${data.error}`
+                `❌ ${data.error || "This account is already linked."}`
         });
 
         return;
     }
 
-    if (!data.success) {
+    if (result.status !== 200 || !data.success) {
+
+        console.error(
+            "Link verification failed:",
+            data
+        );
 
         await interaction.editReply({
             content:
@@ -556,6 +598,17 @@ async function verifyLink(interaction) {
 
         return;
     }
+
+    const minecraftUsername =
+        data.minecraft?.username || "Unknown";
+
+    const minecraftUuid =
+        data.minecraft?.uuid || "Unknown";
+
+
+    // ================================================
+    // ADD LINKED ROLE
+    // ================================================
 
     let roleAdded = false;
 
@@ -597,9 +650,27 @@ async function verifyLink(interaction) {
         );
     }
 
-    const roleText = roleAdded
-        ? "\n\nYou have also received the **Linked** role."
-        : "";
+
+    // ================================================
+    // SUCCESS EMBED
+    // ================================================
+
+    const description = [
+        "",
+        `Your Minecraft account **${minecraftUsername}** has been successfully linked.`,
+        "",
+        "Your Minecraft and Discord accounts are now connected."
+    ];
+
+    if (roleAdded) {
+
+        description.push(
+            "",
+            "You have also received the **Linked** role."
+        );
+    }
+
+    description.push("");
 
     await interaction.editReply({
 
@@ -614,15 +685,15 @@ async function verifyLink(interaction) {
                 )
 
                 .setDescription(
-                    [
-                        "",
-                        `Your Minecraft account **${data.minecraftUsername}** has been successfully linked.`,
-                        "",
-                        "Your Minecraft and Discord accounts are now connected.",
-                        roleText,
-                        ""
-                    ].join("\n")
+                    description.join("\n")
                 )
+
+                .addFields({
+                    name: "Minecraft Username",
+                    value:
+                        `\`${minecraftUsername}\``,
+                    inline: true
+                })
 
                 .setFooter({
                     text: "N7-Link"
@@ -630,7 +701,7 @@ async function verifyLink(interaction) {
         ]
 
     });
-            }
+                          }
 // =====================================================
 // SHOW PROFILE
 // =====================================================
@@ -642,12 +713,12 @@ async function showProfile(interaction) {
     });
 
     const result = await apiRequest(
-        `/api/link/${interaction.user.id}`
+        `/api/link/discord/${interaction.user.id}`
     );
 
     const data = result.data;
 
-    if (!data.success) {
+    if (result.status !== 200) {
 
         await interaction.editReply({
             content:
@@ -697,11 +768,224 @@ async function showProfile(interaction) {
         embeds: [
 
             createProfileEmbed(
-                data.minecraftUsername,
-                data.minecraftUuid,
+                data.minecraft.username,
+                data.minecraft.uuid,
                 data.linkedAt
             )
 
+        ]
+
+    });
+}
+
+
+// =====================================================
+// SHOW LINK INFO
+// =====================================================
+
+async function showLinkInfo(interaction) {
+
+    await interaction.deferReply({
+        ephemeral: true
+    });
+
+    const result = await apiRequest(
+        `/api/link/discord/${interaction.user.id}`
+    );
+
+    const data = result.data;
+
+    if (result.status !== 200) {
+
+        await interaction.editReply({
+            content:
+                "❌ Could not contact the N7-Link API."
+        });
+
+        return;
+    }
+
+    if (!data.linked) {
+
+        await interaction.editReply({
+            content:
+                "❌ Your Discord account is not linked."
+        });
+
+        return;
+    }
+
+    const timestamp = data.linkedAt
+        ? Math.floor(
+            new Date(data.linkedAt).getTime() / 1000
+        )
+        : null;
+
+    const embed =
+        new EmbedBuilder()
+
+            .setColor(0x0B0B0D)
+
+            .setTitle(
+                "🔗  N7-Link Information"
+            )
+
+            .addFields(
+                {
+                    name: "Minecraft Username",
+                    value:
+                        `\`${data.minecraft.username}\``,
+                    inline: true
+                },
+                {
+                    name: "Minecraft UUID",
+                    value:
+                        `\`${data.minecraft.uuid}\``,
+                    inline: false
+                },
+                {
+                    name: "Reward",
+                    value:
+                        data.rewardClaimed
+                            ? "Claimed"
+                            : "Not claimed",
+                    inline: true
+                },
+                {
+                    name: "Linked At",
+                    value:
+                        timestamp
+                            ? `<t:${timestamp}:F>`
+                            : "Unknown",
+                    inline: false
+                }
+            )
+
+            .setFooter({
+                text: "N7-Link"
+            });
+
+    await interaction.editReply({
+        embeds: [embed]
+    });
+}
+
+
+// =====================================================
+// UNLINK ACCOUNT
+// =====================================================
+
+async function unlinkAccount(interaction) {
+
+    await interaction.deferReply({
+        ephemeral: true
+    });
+
+    const result = await apiRequest(
+        "/api/link/unlink",
+        {
+            method: "POST",
+
+            body: JSON.stringify({
+                discordId:
+                    interaction.user.id
+            })
+        }
+    );
+
+    const data = result.data;
+
+    if (result.status === 404) {
+
+        await interaction.editReply({
+            content:
+                "❌ Your Discord account is not linked."
+        });
+
+        return;
+    }
+
+    if (result.status !== 200 || !data.success) {
+
+        await interaction.editReply({
+            content:
+                "❌ Could not unlink your account."
+        });
+
+        return;
+    }
+
+
+    // ================================================
+    // REMOVE LINKED ROLE
+    // ================================================
+
+    try {
+
+        const guild = interaction.guild;
+
+        if (guild) {
+
+            const member =
+                await guild.members.fetch(
+                    interaction.user.id
+                );
+
+            const role =
+                await guild.roles.fetch(
+                    LINKED_ROLE_ID
+                );
+
+            if (
+                role &&
+                member.roles.cache.has(role.id)
+            ) {
+
+                await member.roles.remove(
+                    role,
+                    "N7-Link account unlinked"
+                );
+            }
+        }
+
+    } catch (error) {
+
+        console.error(
+            "Could not remove Linked role:",
+            error
+        );
+    }
+
+
+    // ================================================
+    // SUCCESS
+    // ================================================
+
+    await interaction.editReply({
+
+        embeds: [
+
+            new EmbedBuilder()
+
+                .setColor(0x0B0B0D)
+
+                .setTitle(
+                    "🔓  Account Unlinked"
+                )
+
+                .setDescription(
+                    [
+                        "",
+                        "Your Minecraft account has been unlinked from Discord.",
+                        "",
+                        "You can link another account at any time using `/link`.",
+                        ""
+                    ].join("\n")
+                )
+
+                .setFooter({
+                    text: "N7-Link"
+                })
         ]
 
     });
