@@ -16,7 +16,27 @@ const pool = new Pool({
     }
 });
 
-// Health check
+const CODE_EXPIRY_MINUTES =
+    Number(process.env.N7LINK_CODE_EXPIRY_MINUTES) || 5;
+
+
+// =====================================================
+// AUTHENTICATION
+// =====================================================
+
+function isAuthorized(req) {
+    return (
+        API_SECRET &&
+        req.headers.authorization ===
+        `Bearer ${API_SECRET}`
+    );
+}
+
+
+// =====================================================
+// HEALTH CHECK
+// =====================================================
+
 app.get("/", (req, res) => {
     res.json({
         service: "N7-Link API",
@@ -24,20 +44,21 @@ app.get("/", (req, res) => {
     });
 });
 
-// Create Minecraft linking code
+
+// =====================================================
+// CREATE LINK CODE
+// =====================================================
+
 app.post("/api/link/create", async (req, res) => {
 
-    try {
+    if (!isAuthorized(req)) {
+        return res.status(401).json({
+            success: false,
+            error: "Unauthorized"
+        });
+    }
 
-        if (
-            req.headers.authorization !==
-            `Bearer ${API_SECRET}`
-        ) {
-            return res.status(401).json({
-                success: false,
-                error: "Unauthorized"
-            });
-        }
+    try {
 
         const {
             minecraftUuid,
@@ -56,16 +77,27 @@ app.post("/api/link/create", async (req, res) => {
             });
         }
 
-        // Remove any previous code for this Minecraft account
+        const cleanCode =
+            String(code).trim().toUpperCase();
+
+        if (!/^[A-Z0-9]{6}$/.test(cleanCode)) {
+            return res.status(400).json({
+                success: false,
+                error: "Invalid linking code"
+            });
+        }
+
+        // Remove previous unused codes
+        // for this Minecraft account.
         await pool.query(
             `
             DELETE FROM link_codes
             WHERE minecraft_uuid = $1
+            AND used = FALSE
             `,
             [minecraftUuid]
         );
 
-        // Store new code
         await pool.query(
             `
             INSERT INTO link_codes
@@ -80,46 +112,54 @@ app.post("/api/link/create", async (req, res) => {
                 $1,
                 $2,
                 $3,
-                NOW() + INTERVAL '5 minutes'
+                NOW() + ($4 * INTERVAL '1 minute')
             )
             `,
             [
-                code,
+                cleanCode,
                 minecraftUuid,
-                minecraftUsername
+                minecraftUsername,
+                CODE_EXPIRY_MINUTES
             ]
         );
 
-        res.json({
+        return res.json({
             success: true,
-            message: "Link code created"
+            message: "Link code created",
+            expiresInMinutes: CODE_EXPIRY_MINUTES
         });
 
     } catch (error) {
 
-        console.error(error);
+        console.error(
+            "Create link code error:",
+            error
+        );
 
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             error: "Internal server error"
         });
     }
 });
 
-// Verify Discord linking code
+
+// =====================================================
+// VERIFY LINK CODE
+// =====================================================
+
 app.post("/api/link/verify", async (req, res) => {
 
-    try {
+    if (!isAuthorized(req)) {
+        return res.status(401).json({
+            success: false,
+            error: "Unauthorized"
+        });
+    }
 
-        if (
-            req.headers.authorization !==
-            `Bearer ${API_SECRET}`
-        ) {
-            return res.status(401).json({
-                success: false,
-                error: "Unauthorized"
-            });
-        }
+    const client = await pool.connect();
+
+    try {
 
         const {
             discordId,
@@ -133,7 +173,20 @@ app.post("/api/link/verify", async (req, res) => {
             });
         }
 
-        const result = await pool.query(
+        const cleanCode =
+            String(code).trim().toUpperCase();
+
+        if (!/^[A-Z0-9]{6}$/.test(cleanCode)) {
+            return res.status(400).json({
+                success: false,
+                error: "Invalid linking code"
+            });
+        }
+
+        await client.query("BEGIN");
+
+        // Lock this code while it is being verified.
+        const codeResult = await client.query(
             `
             SELECT *
             FROM link_codes
@@ -141,11 +194,14 @@ app.post("/api/link/verify", async (req, res) => {
               AND used = FALSE
               AND expires_at > NOW()
             LIMIT 1
+            FOR UPDATE
             `,
-            [code]
+            [cleanCode]
         );
 
-        if (result.rows.length === 0) {
+        if (codeResult.rows.length === 0) {
+
+            await client.query("ROLLBACK");
 
             return res.status(404).json({
                 success: false,
@@ -153,20 +209,23 @@ app.post("/api/link/verify", async (req, res) => {
             });
         }
 
-        const linkCode = result.rows[0];
+        const linkCode = codeResult.rows[0];
 
-        // Check Discord account
-        const existingDiscord = await pool.query(
-            `
-            SELECT *
-            FROM links
-            WHERE discord_id = $1
-            LIMIT 1
-            `,
-            [discordId]
-        );
+        // Check Discord account.
+        const existingDiscord =
+            await client.query(
+                `
+                SELECT *
+                FROM links
+                WHERE discord_id = $1
+                LIMIT 1
+                `,
+                [discordId]
+            );
 
         if (existingDiscord.rows.length > 0) {
+
+            await client.query("ROLLBACK");
 
             return res.status(409).json({
                 success: false,
@@ -174,18 +233,21 @@ app.post("/api/link/verify", async (req, res) => {
             });
         }
 
-        // Check Minecraft account
-        const existingMinecraft = await pool.query(
-            `
-            SELECT *
-            FROM links
-            WHERE minecraft_uuid = $1
-            LIMIT 1
-            `,
-            [linkCode.minecraft_uuid]
-        );
+        // Check Minecraft account.
+        const existingMinecraft =
+            await client.query(
+                `
+                SELECT *
+                FROM links
+                WHERE minecraft_uuid = $1
+                LIMIT 1
+                `,
+                [linkCode.minecraft_uuid]
+            );
 
         if (existingMinecraft.rows.length > 0) {
+
+            await client.query("ROLLBACK");
 
             return res.status(409).json({
                 success: false,
@@ -193,8 +255,8 @@ app.post("/api/link/verify", async (req, res) => {
             });
         }
 
-        // Create link
-        await pool.query(
+        // Create the permanent link.
+        await client.query(
             `
             INSERT INTO links
             (
@@ -212,8 +274,8 @@ app.post("/api/link/verify", async (req, res) => {
             ]
         );
 
-        // Mark code as used
-        await pool.query(
+        // Mark code as used.
+        await client.query(
             `
             UPDATE link_codes
             SET used = TRUE
@@ -222,49 +284,72 @@ app.post("/api/link/verify", async (req, res) => {
             [linkCode.id]
         );
 
-        res.json({
+        await client.query("COMMIT");
+
+        return res.json({
             success: true,
             minecraftUsername:
                 linkCode.minecraft_username,
 
             minecraftUuid:
-                linkCode.minecraft_uuid
+                linkCode.minecraft_uuid,
+
+            linkedAt: new Date().toISOString()
         });
 
     } catch (error) {
 
-        console.error(error);
+        try {
+            await client.query("ROLLBACK");
+        } catch {}
 
-        res.status(500).json({
+        console.error(
+            "Verify link error:",
+            error
+        );
+
+        return res.status(500).json({
             success: false,
             error: "Internal server error"
         });
+
+    } finally {
+        client.release();
     }
 });
 
-// Get linked account
+
+// =====================================================
+// GET LINKED ACCOUNT
+// =====================================================
+
 app.get("/api/link/:discordId", async (req, res) => {
+
+    if (!isAuthorized(req)) {
+        return res.status(401).json({
+            success: false,
+            error: "Unauthorized"
+        });
+    }
 
     try {
 
-        if (
-            req.headers.authorization !==
-            `Bearer ${API_SECRET}`
-        ) {
-            return res.status(401).json({
-                success: false,
-                error: "Unauthorized"
-            });
-        }
+        const {
+            discordId
+        } = req.params;
 
         const result = await pool.query(
             `
-            SELECT *
+            SELECT
+                discord_id,
+                minecraft_uuid,
+                minecraft_username,
+                linked_at
             FROM links
             WHERE discord_id = $1
             LIMIT 1
             `,
-            [req.params.discordId]
+            [discordId]
         );
 
         if (result.rows.length === 0) {
@@ -277,9 +362,13 @@ app.get("/api/link/:discordId", async (req, res) => {
 
         const link = result.rows[0];
 
-        res.json({
+        return res.json({
             success: true,
             linked: true,
+
+            discordId:
+                link.discord_id,
+
             minecraftUsername:
                 link.minecraft_username,
 
@@ -292,18 +381,90 @@ app.get("/api/link/:discordId", async (req, res) => {
 
     } catch (error) {
 
-        console.error(error);
+        console.error(
+            "Get link error:",
+            error
+        );
 
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             error: "Internal server error"
         });
     }
 });
 
-app.listen(PORT, "0.0.0.0", () => {
 
-    console.log(
-        `N7-Link API running on port ${PORT}`
-    );
+// =====================================================
+// UNLINK ACCOUNT
+// =====================================================
+
+app.delete("/api/link/:discordId", async (req, res) => {
+
+    if (!isAuthorized(req)) {
+        return res.status(401).json({
+            success: false,
+            error: "Unauthorized"
+        });
+    }
+
+    try {
+
+        const {
+            discordId
+        } = req.params;
+
+        const result = await pool.query(
+            `
+            DELETE FROM links
+            WHERE discord_id = $1
+            RETURNING *
+            `,
+            [discordId]
+        );
+
+        if (result.rows.length === 0) {
+
+            return res.status(404).json({
+                success: false,
+                error: "Account is not linked"
+            });
+        }
+
+        return res.json({
+            success: true,
+            message: "Account unlinked"
+        });
+
+    } catch (error) {
+
+        console.error(
+            "Unlink error:",
+            error
+        );
+
+        return res.status(500).json({
+            success: false,
+            error: "Internal server error"
+        });
+    }
 });
+
+
+// =====================================================
+// START SERVER
+// =====================================================
+
+app.listen(
+    PORT,
+    "0.0.0.0",
+    () => {
+
+        console.log(
+            `N7-Link API running on port ${PORT}`
+        );
+
+        console.log(
+            `Code expiry: ${CODE_EXPIRY_MINUTES} minutes`
+        );
+    }
+);
