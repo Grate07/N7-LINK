@@ -1,0 +1,35 @@
+name: Build N7-Link
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Build Velocity Plugin
+        run: mvn clean package
+
+      - name: Build Paper Bridge
+        working-directory: bridge
+        run: mvn clean package
+
+      - name: Upload JARs
+        uses: actions/upload-artifact@v4
+        with:
+          name: N7-Link-JARs
+          path: |
+            target/*.jar
+            bridge/target/*.jar
