@@ -5,6 +5,7 @@ import com.velocitypowered.api.command.CommandManager;
 import com.velocitypowered.api.command.SimpleCommand;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.connection.DisconnectEvent;
+import com.velocitypowered.api.event.connection.PluginMessageEvent;
 import com.velocitypowered.api.event.connection.PostLoginEvent;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
 import com.velocitypowered.api.event.proxy.ProxyShutdownEvent;
@@ -20,7 +21,9 @@ import org.spongepowered.configurate.ConfigurationNode;
 import org.spongepowered.configurate.yaml.YamlConfigurationLoader;
 
 import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
 import java.io.DataOutputStream;
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
@@ -31,6 +34,7 @@ import java.nio.file.Path;
 import java.security.SecureRandom;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Scanner;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -69,6 +73,12 @@ public class N7Link {
                     "reward"
             );
 
+    private static final MinecraftChannelIdentifier REWARD_ACK_CHANNEL =
+            MinecraftChannelIdentifier.create(
+                    "n7link",
+                    "reward_ack"
+            );
+
 
     // =====================================================
     // CONSTRUCTOR
@@ -80,7 +90,6 @@ public class N7Link {
             Logger logger,
             @DataDirectory Path dataDirectory
     ) {
-
         this.server = server;
         this.logger = logger;
         this.dataDirectory = dataDirectory;
@@ -98,8 +107,10 @@ public class N7Link {
 
         loadConfiguration();
 
-        server.getChannelRegistrar()
-                .register(REWARD_CHANNEL);
+        server.getChannelRegistrar().register(
+                REWARD_CHANNEL,
+                REWARD_ACK_CHANNEL
+        );
 
         CommandManager commandManager =
                 server.getCommandManager();
@@ -140,14 +151,90 @@ public class N7Link {
             ProxyShutdownEvent event
     ) {
 
-        server.getChannelRegistrar()
-                .unregister(REWARD_CHANNEL);
+        server.getChannelRegistrar().unregister(
+                REWARD_CHANNEL,
+                REWARD_ACK_CHANNEL
+        );
 
         rewardChecking.clear();
 
         logger.info(
                 "N7-Link has been disabled."
         );
+    }
+
+
+    // =====================================================
+    // REWARD ACK
+    // =====================================================
+
+    @Subscribe
+    public void onRewardAck(
+            PluginMessageEvent event
+    ) {
+
+        if (!event.getIdentifier().equals(
+                REWARD_ACK_CHANNEL
+        )) {
+            return;
+        }
+
+        try {
+
+            DataInputStream input =
+                    new DataInputStream(
+                            new ByteArrayInputStream(
+                                    event.getData()
+                            )
+                    );
+
+            String action =
+                    input.readUTF();
+
+            if (!"N7LINK_REWARD_ACK_V1".equals(action)) {
+                logger.warn(
+                        "Received unknown N7-Link reward ACK: {}",
+                        action
+                );
+                return;
+            }
+
+            String uuidString =
+                    input.readUTF();
+
+            UUID uuid =
+                    UUID.fromString(uuidString);
+
+            Player player =
+                    server.getPlayer(uuid)
+                            .orElse(null);
+
+            if (player == null) {
+                logger.warn(
+                        "Received reward ACK for offline player {}.",
+                        uuidString
+                );
+                return;
+            }
+
+            logger.info(
+                    "Paper confirmed reward execution for {}.",
+                    player.getUsername()
+            );
+
+            claimReward(player);
+
+            event.setResult(
+                    PluginMessageEvent.ForwardResult.handled()
+            );
+
+        } catch (Exception error) {
+
+            logger.warn(
+                    "Failed to process N7-Link reward ACK: {}",
+                    error.getMessage()
+            );
+        }
     }
 
 
@@ -399,8 +486,6 @@ public class N7Link {
                     .schedule();
         }
     }
-
-
     // =====================================================
     // CREATE LINK CODE
     // =====================================================
@@ -676,8 +761,10 @@ public class N7Link {
 
             rewardChecking.remove(uuid);
         }
-                    }
-            // =====================================================
+    }
+
+
+    // =====================================================
     // GET MINECRAFT LINK
     // =====================================================
 
@@ -809,17 +896,6 @@ public class N7Link {
                             byteOutput
                     );
 
-            /*
-             * Packet format:
-             *
-             * UTF  -> Action
-             * UTF  -> Minecraft UUID
-             * UTF  -> Minecraft username
-             * INT  -> Number of reward commands
-             * UTF  -> Each command
-             * UTF  -> Reward message
-             */
-
             output.writeUTF(
                     "N7LINK_REWARD_V1"
             );
@@ -904,30 +980,9 @@ public class N7Link {
             }
 
             logger.info(
-                    "Sent N7-Link reward packet to Paper for {}.",
+                    "Sent N7-Link reward packet to Paper for {}. Waiting for ACK.",
                     player.getUsername()
             );
-
-            /*
-             * The Paper bridge receives the packet and executes
-             * the configured reward commands.
-             *
-             * We only claim the reward after the packet has
-             * successfully been sent by Velocity.
-             */
-
-            server.getScheduler()
-                    .buildTask(
-                            this,
-                            () -> claimReward(
-                                    player
-                            )
-                    )
-                    .delay(
-                            1,
-                            TimeUnit.SECONDS
-                    )
-                    .schedule();
 
         } catch (Exception error) {
 
@@ -938,8 +993,6 @@ public class N7Link {
             );
         }
     }
-
-
     // =====================================================
     // CLAIM REWARD
     // =====================================================
@@ -1051,8 +1104,10 @@ public class N7Link {
                 connection.disconnect();
             }
         }
-                    }
-            // =====================================================
+    }
+
+
+    // =====================================================
     // GENERATE LINK CODE
     // =====================================================
 
