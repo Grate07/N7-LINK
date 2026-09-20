@@ -1,0 +1,12 @@
+{
+  "name": "n7-link-bot",
+  "version": "1.0.0",
+  "description": "N7-Link Discord bot",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.25.1"
+  }
+}
