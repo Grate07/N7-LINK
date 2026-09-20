@@ -1,35 +1,41 @@
 package me.n7link.bridge;
 
 import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.plugin.messaging.PluginMessageListener;
 
 import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
-import java.nio.charset.StandardCharsets;
 
-public class N7LinkBridge extends JavaPlugin {
+public class N7LinkBridge extends JavaPlugin
+        implements PluginMessageListener {
 
     private static final String CHANNEL = "n7link:reward";
 
     @Override
     public void onEnable() {
 
-        getServer().getMessenger().registerIncomingPluginChannel(
-                this,
-                CHANNEL,
-                (channel, player, message) -> {
+        getServer().getMessenger()
+                .registerIncomingPluginChannel(
+                        this,
+                        CHANNEL,
+                        this
+                );
 
-                    if (!CHANNEL.equals(channel)) {
-                        return;
-                    }
+        getServer().getMessenger()
+                .registerOutgoingPluginChannel(
+                        this,
+                        CHANNEL
+                );
 
-                    handleReward(player, message);
-                }
+        getLogger().info(
+                "N7-Link Bridge has been enabled!"
         );
 
-        getLogger().info("N7-Link Bridge has been enabled!");
+        getLogger().info(
+                "Reward channel registered."
+        );
     }
 
     @Override
@@ -38,116 +44,141 @@ public class N7LinkBridge extends JavaPlugin {
         getServer().getMessenger()
                 .unregisterIncomingPluginChannel(
                         this,
+                        CHANNEL,
+                        this
+                );
+
+        getServer().getMessenger()
+                .unregisterOutgoingPluginChannel(
+                        this,
                         CHANNEL
                 );
+
+        getLogger().info(
+                "N7-Link Bridge has been disabled!"
+        );
     }
 
-    private void handleReward(
+    @Override
+    public void onPluginMessageReceived(
+            String channel,
             Player player,
-            byte[] data
+            byte[] message
     ) {
+
+        if (!CHANNEL.equals(channel)) {
+            return;
+        }
 
         try {
 
             DataInputStream input =
                     new DataInputStream(
-                            new ByteArrayInputStream(data)
+                            new ByteArrayInputStream(message)
                     );
 
-            String header =
+            String action =
                     input.readUTF();
 
-            if (!"N7LINK_REWARD_V1".equals(header)) {
-                getLogger().warning(
-                        "Received invalid N7-Link reward message."
-                );
+            if (!"N7LINK_REWARD_V1".equals(action)) {
                 return;
             }
 
-            String minecraftUuid =
+            String uuid =
                     input.readUTF();
 
-            String minecraftUsername =
+            String username =
                     input.readUTF();
 
             int commandCount =
                     input.readInt();
 
-            if (commandCount < 0 || commandCount > 50) {
-                getLogger().warning(
-                        "Invalid reward command count."
-                );
-                return;
-            }
-
             String[] commands =
                     new String[commandCount];
 
             for (int i = 0; i < commandCount; i++) {
-
-                commands[i] =
-                        input.readUTF();
+                commands[i] = input.readUTF();
             }
 
-            String message =
+            String rewardMessage =
                     input.readUTF();
 
-            if (
-                    !player.getUniqueId()
-                            .toString()
-                            .equals(minecraftUuid)
-            ) {
+            Player target =
+                    Bukkit.getPlayerExact(username);
 
+            if (target == null) {
                 getLogger().warning(
-                        "Reward UUID does not match player."
+                        "Could not find player "
+                                + username
+                                + " for reward."
                 );
-
                 return;
             }
 
-            for (String command : commands) {
+            Bukkit.getScheduler().runTask(
+                    this,
+                    () -> {
 
-                String finalCommand =
-                        command
-                                .replace(
-                                        "%player%",
-                                        minecraftUsername
-                                )
-                                .replace(
-                                        "%uuid%",
-                                        minecraftUuid
-                                );
+                        for (String command : commands) {
 
-                Bukkit.dispatchCommand(
-                        Bukkit.getConsoleSender(),
-                        finalCommand
-                );
-            }
+                            if (command == null ||
+                                    command.isBlank()) {
+                                continue;
+                            }
 
-            if (
-                    message != null &&
-                    !message.isBlank()
-            ) {
+                            String processedCommand =
+                                    command
+                                            .replace(
+                                                    "%player%",
+                                                    target.getName()
+                                            )
+                                            .replace(
+                                                    "%uuid%",
+                                                    uuid
+                                            );
 
-                player.sendMessage(
-                        ChatColor.translateAlternateColorCodes(
-                                '&',
-                                message
-                        )
-                );
-            }
+                            Bukkit.dispatchCommand(
+                                    Bukkit.getConsoleSender(),
+                                    processedCommand
+                            );
+                        }
 
-            getLogger().info(
-                    "N7-Link reward executed for "
-                            + minecraftUsername
+                        if (rewardMessage != null &&
+                                !rewardMessage.isBlank()) {
+
+                            String messageText =
+                                    rewardMessage
+                                            .replace(
+                                                    "%player%",
+                                                    target.getName()
+                                            )
+                                            .replace(
+                                                    "%uuid%",
+                                                    uuid
+                                            )
+                                            .replace(
+                                                    "&",
+                                                    "§"
+                                            );
+
+                            target.sendMessage(
+                                    messageText
+                            );
+                        }
+
+                        getLogger().info(
+                                "Executed N7-Link rewards for "
+                                        + target.getName()
+                        );
+                    }
             );
 
         } catch (Exception error) {
 
             getLogger().warning(
-                    "Could not process N7-Link reward: "
+                    "Failed to process N7-Link reward: "
                             + error.getMessage()
             );
         }
     }
-}
+        }
