@@ -712,12 +712,23 @@ if (apiSecret == null || apiSecret.isBlank()) {
             );
 
             // Number of reward commands
-            output.writeInt(1);
+output.writeInt(rewardCommands.size());
 
-            // Temporary reward command
-            output.writeUTF(
-                    "give %player% diamond 5"
-            );
+for (String command : rewardCommands) {
+
+    String processedCommand =
+            command
+                    .replace(
+                            "%player%",
+                            player.getUsername()
+                    )
+                    .replace(
+                            "%uuid%",
+                            player.getUniqueId().toString()
+                    );
+
+    output.writeUTF(processedCommand);
+}
 
             // Reward message
             output.writeUTF(
