@@ -19,29 +19,27 @@ const {
 
 
 // =====================================================
-// HEALTH SERVER FOR RENDER
+// RENDER HEALTH SERVER
 // =====================================================
 
-const webApp = express();
+const app = express();
 
 const PORT = process.env.PORT || 3000;
 
-webApp.get("/", (req, res) => {
+app.get("/", (req, res) => {
     res.json({
         service: "N7-Link Discord Bot",
         status: "online"
     });
 });
 
-webApp.listen(PORT, "0.0.0.0", () => {
-    console.log(
-        `N7-Link health server running on port ${PORT}`
-    );
+app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Health server running on port ${PORT}`);
 });
 
 
 // =====================================================
-// CONFIGURATION
+// ENVIRONMENT VARIABLES
 // =====================================================
 
 const TOKEN = process.env.DISCORD_TOKEN;
@@ -56,7 +54,7 @@ const LINKED_ROLE_ID =
 
 
 // =====================================================
-// CONFIGURATION CHECK
+// CHECK CONFIGURATION
 // =====================================================
 
 if (!TOKEN) {
@@ -85,9 +83,7 @@ if (!API_SECRET) {
 }
 
 if (!LINKED_ROLE_ID) {
-    console.error(
-        "Missing N7LINK_LINKED_ROLE_ID"
-    );
+    console.error("Missing N7LINK_LINKED_ROLE_ID");
     process.exit(1);
 }
 
@@ -104,13 +100,10 @@ const client = new Client({
 
 
 // =====================================================
-// API REQUEST HELPER
+// API HELPER
 // =====================================================
 
-async function apiRequest(
-    endpoint,
-    options = {}
-) {
+async function apiRequest(endpoint, options = {}) {
 
     const response = await fetch(
         `${API_URL}${endpoint}`,
@@ -119,10 +112,7 @@ async function apiRequest(
 
             headers: {
                 "Content-Type": "application/json",
-
-                "Authorization":
-                    `Bearer ${API_SECRET}`,
-
+                "Authorization": `Bearer ${API_SECRET}`,
                 ...(options.headers || {})
             }
         }
@@ -131,11 +121,8 @@ async function apiRequest(
     let data;
 
     try {
-
         data = await response.json();
-
     } catch {
-
         data = {
             success: false,
             error: "Invalid API response"
@@ -170,13 +157,7 @@ const commands = [
     new SlashCommandBuilder()
         .setName("linkinfo")
         .setDescription(
-            "View your account linking information"
-        ),
-
-    new SlashCommandBuilder()
-        .setName("unlink")
-        .setDescription(
-            "Unlink your Minecraft account"
+            "View your linked Minecraft account"
         ),
 
     new SlashCommandBuilder()
@@ -189,36 +170,6 @@ const commands = [
 
 
 // =====================================================
-// REGISTER COMMANDS
-// =====================================================
-
-async function registerCommands() {
-
-    const rest = new REST({
-        version: "10"
-    }).setToken(TOKEN);
-
-    console.log(
-        "Registering N7-Link commands..."
-    );
-
-    await rest.put(
-        Routes.applicationGuildCommands(
-            CLIENT_ID,
-            GUILD_ID
-        ),
-        {
-            body: commands
-        }
-    );
-
-    console.log(
-        "N7-Link commands registered."
-    );
-}
-
-
-// =====================================================
 // LINK EMBED
 // =====================================================
 
@@ -228,22 +179,29 @@ function createLinkEmbed() {
 
         .setColor(0x0B0B0D)
 
-        .setTitle("🔗  Link Account")
+        .setTitle("🔗  Minecraft Account Linking")
 
         .setDescription(
             [
                 "",
-                "Connect your Minecraft account",
+                "Link your Minecraft account",
                 "to your Discord account.",
                 "",
-                "Click the button below to begin.",
+                "**How to link:**",
+                "",
+                "1. Join the Minecraft server.",
+                "2. Type `/link` in Minecraft.",
+                "3. Copy the 6-character code.",
+                "4. Click **Link Account** below.",
+                "5. Enter your code.",
+                "",
+                "Your code expires after **5 minutes**.",
                 ""
             ].join("\n")
         )
 
         .setFooter({
-            text:
-                "N7-Link • Secure account linking"
+            text: "N7-Link • Account Linking"
         });
 }
 
@@ -258,18 +216,40 @@ function createLinkButton() {
         .addComponents(
 
             new ButtonBuilder()
-                .setCustomId(
-                    "n7link_link"
-                )
-                .setLabel(
-                    "Link Account"
-                )
+                .setCustomId("n7link_link")
+                .setLabel("Link Account")
                 .setEmoji("🔗")
-                .setStyle(
-                    ButtonStyle.Primary
-                )
+                .setStyle(ButtonStyle.Primary)
 
         );
+}
+
+
+// =====================================================
+// LINK MODAL
+// =====================================================
+
+function createLinkModal() {
+
+    const modal = new ModalBuilder()
+        .setCustomId("n7link_modal")
+        .setTitle("Minecraft Account Link");
+
+    const codeInput = new TextInputBuilder()
+        .setCustomId("n7link_code")
+        .setLabel("Enter your 6-character link code")
+        .setPlaceholder("Example: A7K921")
+        .setStyle(TextInputStyle.Short)
+        .setMinLength(6)
+        .setMaxLength(6)
+        .setRequired(true);
+
+    const row = new ActionRowBuilder()
+        .addComponents(codeInput);
+
+    modal.addComponents(row);
+
+    return modal;
 }
 
 
@@ -283,49 +263,32 @@ function createProfileEmbed(
     linkedAt
 ) {
 
+    const timestamp = Math.floor(
+        new Date(linkedAt).getTime() / 1000
+    );
+
     return new EmbedBuilder()
 
         .setColor(0x0B0B0D)
 
-        .setTitle(
-            "🔗  Minecraft Profile"
-        )
+        .setTitle("🔗  Minecraft Profile")
 
         .addFields(
-
             {
-                name:
-                    "Minecraft Username",
-
-                value:
-                    `\`${minecraftUsername}\``,
-
+                name: "Minecraft Username",
+                value: `\`${minecraftUsername}\``,
                 inline: true
             },
-
             {
-                name:
-                    "Minecraft UUID",
-
-                value:
-                    `\`${minecraftUuid}\``,
-
+                name: "Minecraft UUID",
+                value: `\`${minecraftUuid}\``,
                 inline: false
             },
-
             {
-                name:
-                    "Linked",
-
-                value:
-                    `<t:${Math.floor(
-                        new Date(linkedAt)
-                            .getTime() / 1000
-                    )}:R>`,
-
+                name: "Linked",
+                value: `<t:${timestamp}:R>`,
                 inline: true
             }
-
         )
 
         .setFooter({
@@ -335,52 +298,7 @@ function createProfileEmbed(
 
 
 // =====================================================
-// LINK MODAL
-// =====================================================
-
-function createLinkModal() {
-
-    const modal =
-        new ModalBuilder()
-            .setCustomId(
-                "n7link_modal"
-            )
-            .setTitle(
-                "Link Minecraft Account"
-            );
-
-    const codeInput =
-        new TextInputBuilder()
-            .setCustomId(
-                "n7link_code"
-            )
-            .setLabel(
-                "Enter your 6-character link code"
-            )
-            .setPlaceholder(
-                "Example: A7K921"
-            )
-            .setStyle(
-                TextInputStyle.Short
-            )
-            .setMinLength(6)
-            .setMaxLength(6)
-            .setRequired(true);
-
-    const row =
-        new ActionRowBuilder()
-            .addComponents(
-                codeInput
-            );
-
-    modal.addComponents(row);
-
-    return modal;
-}
-
-
-// =====================================================
-// BOT READY
+// READY
 // =====================================================
 
 client.once(
@@ -393,6 +311,421 @@ client.once(
 
         try {
 
-            await registerCommands();
+            const rest = new REST({
+                version: "10"
+            }).setToken(TOKEN);
 
-        } catch (error
+            console.log(
+                "Registering N7-Link commands..."
+            );
+
+            await rest.put(
+                Routes.applicationGuildCommands(
+                    CLIENT_ID,
+                    GUILD_ID
+                ),
+                {
+                    body: commands
+                }
+            );
+
+            console.log(
+                "N7-Link commands registered."
+            );
+
+        } catch (error) {
+
+            console.error(
+                "Command registration failed:",
+                error
+            );
+        }
+
+        console.log(
+            "N7-Link Discord bot is online!"
+        );
+    }
+);
+
+
+// =====================================================
+// INTERACTION HANDLER
+// =====================================================
+
+client.on(
+    Events.InteractionCreate,
+    async interaction => {
+
+        try {
+
+            // =========================================
+            // SLASH COMMANDS
+            // =========================================
+
+            if (interaction.isChatInputCommand()) {
+
+                if (
+                    interaction.commandName === "link"
+                ) {
+
+                    await interaction.reply({
+                        embeds: [
+                            createLinkEmbed()
+                        ],
+                        components: [
+                            createLinkButton()
+                        ]
+                    });
+
+                    return;
+                }
+
+
+                if (
+                    interaction.commandName === "profile" ||
+                    interaction.commandName === "linkinfo"
+                ) {
+
+                    await showProfile(interaction);
+
+                    return;
+                }
+
+
+                if (
+                    interaction.commandName === "setup-link"
+                ) {
+
+                    if (
+                        !interaction.member.permissions.has(
+                            PermissionsBitField.Flags.ManageGuild
+                        )
+                    ) {
+
+                        await interaction.reply({
+                            content:
+                                "❌ You need the **Manage Server** permission.",
+                            ephemeral: true
+                        });
+
+                        return;
+                    }
+
+                    await interaction.channel.send({
+                        embeds: [
+                            createLinkEmbed()
+                        ],
+                        components: [
+                            createLinkButton()
+                        ]
+                    });
+
+                    await interaction.reply({
+                        content:
+                            "✅ N7-Link panel created.",
+                        ephemeral: true
+                    });
+
+                    return;
+                }
+            }
+
+
+            // =========================================
+            // LINK BUTTON
+            // =========================================
+
+            if (
+                interaction.isButton() &&
+                interaction.customId === "n7link_link"
+            ) {
+
+                await interaction.showModal(
+                    createLinkModal()
+                );
+
+                return;
+            }
+
+
+            // =========================================
+            // LINK MODAL
+            // =========================================
+
+            if (
+                interaction.isModalSubmit() &&
+                interaction.customId === "n7link_modal"
+            ) {
+
+                await verifyLink(interaction);
+
+                return;
+            }
+
+        } catch (error) {
+
+            console.error(
+                "Interaction error:",
+                error
+            );
+
+            try {
+
+                if (
+                    interaction.replied ||
+                    interaction.deferred
+                ) {
+
+                    await interaction.followUp({
+                        content:
+                            "❌ Something went wrong. Please try again.",
+                        ephemeral: true
+                    });
+
+                } else {
+
+                    await interaction.reply({
+                        content:
+                            "❌ Something went wrong. Please try again.",
+                        ephemeral: true
+                    });
+                }
+
+            } catch {}
+        }
+    }
+);
+
+
+// =====================================================
+// VERIFY LINK
+// =====================================================
+
+async function verifyLink(interaction) {
+
+    const code =
+        interaction.fields
+            .getTextInputValue("n7link_code")
+            .trim()
+            .toUpperCase();
+
+    await interaction.deferReply({
+        ephemeral: true
+    });
+
+    const result = await apiRequest(
+        "/api/link/verify",
+        {
+            method: "POST",
+
+            body: JSON.stringify({
+                discordId: interaction.user.id,
+                code: code
+            })
+        }
+    );
+
+    const data = result.data;
+
+    if (result.status === 404) {
+
+        await interaction.editReply({
+            content:
+                "❌ That code is invalid or has expired."
+        });
+
+        return;
+    }
+
+    if (result.status === 409) {
+
+        await interaction.editReply({
+            content:
+                `❌ ${data.error}`
+        });
+
+        return;
+    }
+
+    if (!data.success) {
+
+        await interaction.editReply({
+            content:
+                "❌ The linking service could not process your request."
+        });
+
+        return;
+    }
+
+    let roleAdded = false;
+
+    try {
+
+        const guild = interaction.guild;
+
+        if (guild) {
+
+            const member =
+                await guild.members.fetch(
+                    interaction.user.id
+                );
+
+            const role =
+                await guild.roles.fetch(
+                    LINKED_ROLE_ID
+                );
+
+            if (
+                role &&
+                !member.roles.cache.has(role.id)
+            ) {
+
+                await member.roles.add(
+                    role,
+                    "N7-Link account linked"
+                );
+
+                roleAdded = true;
+            }
+        }
+
+    } catch (error) {
+
+        console.error(
+            "Could not add Linked role:",
+            error
+        );
+    }
+
+    const roleText = roleAdded
+        ? "\n\nYou have also received the **Linked** role."
+        : "";
+
+    await interaction.editReply({
+
+        embeds: [
+
+            new EmbedBuilder()
+
+                .setColor(0x0B0B0D)
+
+                .setTitle(
+                    "✅  Account Linked"
+                )
+
+                .setDescription(
+                    [
+                        "",
+                        `Your Minecraft account **${data.minecraftUsername}** has been successfully linked.`,
+                        "",
+                        "Your Minecraft and Discord accounts are now connected.",
+                        roleText,
+                        ""
+                    ].join("\n")
+                )
+
+                .setFooter({
+                    text: "N7-Link"
+                })
+        ]
+
+    });
+            }
+// =====================================================
+// SHOW PROFILE
+// =====================================================
+
+async function showProfile(interaction) {
+
+    await interaction.deferReply({
+        ephemeral: true
+    });
+
+    const result = await apiRequest(
+        `/api/link/${interaction.user.id}`
+    );
+
+    const data = result.data;
+
+    if (!data.success) {
+
+        await interaction.editReply({
+            content:
+                "❌ Could not contact the N7-Link API."
+        });
+
+        return;
+    }
+
+    if (!data.linked) {
+
+        await interaction.editReply({
+
+            embeds: [
+
+                new EmbedBuilder()
+
+                    .setColor(0x0B0B0D)
+
+                    .setTitle(
+                        "🔗  Minecraft Profile"
+                    )
+
+                    .setDescription(
+                        [
+                            "",
+                            "You don't have a linked Minecraft account.",
+                            "",
+                            "Use `/link` to link your account.",
+                            ""
+                        ].join("\n")
+                    )
+
+                    .setFooter({
+                        text: "N7-Link"
+                    })
+
+            ]
+
+        });
+
+        return;
+    }
+
+    await interaction.editReply({
+
+        embeds: [
+
+            createProfileEmbed(
+                data.minecraftUsername,
+                data.minecraftUuid,
+                data.linkedAt
+            )
+
+        ]
+
+    });
+}
+
+
+// =====================================================
+// LOGIN
+// =====================================================
+
+client.login(TOKEN)
+    .then(() => {
+
+        console.log(
+            "Discord login successful."
+        );
+
+    })
+    .catch(error => {
+
+        console.error(
+            "Discord login failed:",
+            error
+        );
+
+        process.exit(1);
+    });
