@@ -34,12 +34,19 @@
             <scope>provided</scope>
         </dependency>
 
+        <!-- YAML configuration -->
+        <dependency>
+            <groupId>org.spongepowered</groupId>
+            <artifactId>configurate-yaml</artifactId>
+            <version>4.2.0</version>
+        </dependency>
+
     </dependencies>
 
     <build>
         <plugins>
 
-            <!-- Compile Java -->
+            <!-- Java 21 compiler -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -49,7 +56,7 @@
                 </configuration>
             </plugin>
 
-            <!-- Create plugin JAR -->
+            <!-- Create the final plugin JAR -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
